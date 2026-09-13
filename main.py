@@ -1,12 +1,10 @@
-# ============================================================
-# app.py  —  ClouDisk 后端（纯 JSON 存储 + 用户配额）
-# ============================================================
 import os
 import json
 import uuid
 import shutil
 import mimetypes
 import threading
+import secrets
 from datetime import datetime
 from functools import wraps
 
@@ -24,13 +22,42 @@ DB_FILE    = os.path.join(DATA_DIR, 'db.json')
 QUOTA_FILE = os.path.join(DATA_DIR, 'quotas.json')
 os.makedirs(DATA_DIR, exist_ok=True)
 
+def _load_secret_key():
+    """从 data/secret.key 读取密钥；不存在则随机生成并持久化。"""
+    key_file = os.path.join(DATA_DIR, 'secret.key')
+
+    # 1) 环境变量优先（方便容器部署）
+    env_key = os.environ.get('CLOUDDISK_SECRET_KEY')
+    if env_key:
+        return env_key
+
+    # 2) 读本地文件
+    if os.path.exists(key_file):
+        try:
+            with open(key_file, 'r', encoding='utf-8') as fh:
+                key = fh.read().strip()
+            if key:
+                return key
+        except OSError:
+            pass
+
+    # 3) 都没有 → 生成新的并写盘
+    key = secrets.token_urlsafe(48)
+    try:
+        with open(key_file, 'w', encoding='utf-8') as fh:
+            fh.write(key)
+        os.chmod(key_file, 0o600)
+    except OSError:
+        pass
+    return key
+
+
 app = Flask(__name__)
 app.config.update(
-    SECRET_KEY='please-change-this-secret-key',
-    MAX_CONTENT_LENGTH=2 * 1024 * 1024 * 1024,   # 单次请求上限 2GB（兜底）
+    SECRET_KEY=_load_secret_key(),
+    MAX_CONTENT_LENGTH=2 * 1024 * 1024 * 1024,
     JSON_AS_ASCII=False,
 )
-
 
 # ==========================================================================
 # JSON 数据库层
