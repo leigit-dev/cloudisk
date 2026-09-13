@@ -1,0 +1,134 @@
+{
+  "users": {
+    "1": {
+      "id": 1,
+      "username": "ly",
+      "password_hash": "scrypt:32768:8:1$yZyhCLhAVKTkmQJZ$b3fbde61f55de9c18c7ac4cb6e36cfe74674f8076adea2126899157218c75255be3816526eabf5b6607b3e35840b9545dc741bd11fdac5874260f621bcc53fac",
+      "created_at": "2026-09-13T01:53:36"
+    }
+  },
+  "nodes": {
+    "1": {
+      "id": 1,
+      "user_id": 1,
+      "parent_id": 4,
+      "name": "93 (1).docx",
+      "is_dir": false,
+      "size": 15092,
+      "mime": "application/wps-office.docx",
+      "stored": "57a6e84adcf4411e8863dde034f00494",
+      "created_at": "2026-09-13T01:55:23",
+      "updated_at": "2026-09-13T01:58:18"
+    },
+    "2": {
+      "id": 2,
+      "user_id": 1,
+      "parent_id": 4,
+      "name": "93-2 (1).docx",
+      "is_dir": false,
+      "size": 19581,
+      "mime": "application/wps-office.docx",
+      "stored": "bd84a5ae419f4441b0f1976f8fdfdd6e",
+      "created_at": "2026-09-13T01:55:23",
+      "updated_at": "2026-09-13T01:58:18"
+    },
+    "3": {
+      "id": 3,
+      "user_id": 1,
+      "parent_id": 4,
+      "name": "高一数学培训班学习用书（暑-全国通用-A加）-正文 (1).pdf",
+      "is_dir": false,
+      "size": 13723471,
+      "mime": "application/pdf",
+      "stored": "e7d1c89b5f35486d91a7239890f00c67",
+      "created_at": "2026-09-13T01:55:23",
+      "updated_at": "2026-09-13T01:58:18"
+    },
+    "4": {
+      "id": 4,
+      "user_id": 1,
+      "parent_id": null,
+      "name": "trytry",
+      "is_dir": true,
+      "size": 0,
+      "mime": "",
+      "stored": "",
+      "created_at": "2026-09-13T01:57:58",
+      "updated_at": "2026-09-13T01:57:58"
+    },
+    "5": {
+      "id": 5,
+      "user_id": 1,
+      "parent_id": 4,
+      "name": "2026-07-19_09-55-48.png",
+      "is_dir": false,
+      "size": 228989,
+      "mime": "image/png",
+      "stored": "57685f1829cc4a8e99e300ea78ba2e2f",
+      "created_at": "2026-09-13T02:00:56",
+      "updated_at": "2026-09-13T02:00:56"
+    },
+    "6": {
+      "id": 6,
+      "user_id": 1,
+      "parent_id": 4,
+      "name": "2026-06-28_13-24-47.png",
+      "is_dir": false,
+      "size": 329541,
+      "mime": "image/png",
+      "stored": "23735b041fa340a5b178cc970f4b7b28",
+      "created_at": "2026-09-13T02:00:56",
+      "updated_at": "2026-09-13T02:00:56"
+    },
+    "7": {
+      "id": 7,
+      "user_id": 1,
+      "parent_id": 4,
+      "name": "2026-02-19_20-14-49.png",
+      "is_dir": false,
+      "size": 6690351,
+      "mime": "image/png",
+      "stored": "593af93decbd47698856cb568e3a6da8",
+      "created_at": "2026-09-13T02:00:56",
+      "updated_at": "2026-09-13T02:00:56"
+    },
+    "8": {
+      "id": 8,
+      "user_id": 1,
+      "parent_id": 4,
+      "name": "2026-08-21_09-51-41.png",
+      "is_dir": false,
+      "size": 906749,
+      "mime": "image/png",
+      "stored": "7f6a01e9c0db4babbe6abda598cacba3",
+      "created_at": "2026-09-13T02:00:56",
+      "updated_at": "2026-09-13T02:00:56"
+    },
+    "9": {
+      "id": 9,
+      "user_id": 1,
+      "parent_id": null,
+      "name": "1.mp4",
+      "is_dir": false,
+      "size": 221888,
+      "mime": "video/mp4",
+      "stored": "1d97fb54038140f1ae29ae527c405e59",
+      "created_at": "2026-09-13T02:02:09",
+      "updated_at": "2026-09-13T02:02:09"
+    },
+    "10": {
+      "id": 10,
+      "user_id": 1,
+      "parent_id": null,
+      "name": "deepseek_python_20260807_e73bff.py",
+      "is_dir": false,
+      "size": 2069,
+      "mime": "text/x-python",
+      "stored": "b724c53154b042f4bfc5a8dee9b4eb39",
+      "created_at": "2026-09-13T02:02:16",
+      "updated_at": "2026-09-13T02:02:16"
+    }
+  },
+  "next_user_id": 2,
+  "next_node_id": 11
+}

@@ -1,0 +1,62 @@
+import os
+import soundfile as sf
+from datasets import load_dataset
+
+# 1. 设置镜像站 (国内访问加速)
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+
+# 2. 定义目标方言及其对应的保存目录
+# 注意：请根据数据集中实际的方言标签值来修改这里的键名
+target_dialects = {
+    "chengdu": "./data/chengdu",
+    "shijiazhuang": "./data/shijiazhuang",
+    "xian": "./data/xian",
+    "zhengzhou": "./data/zhengzhou",
+}
+
+# 为每个方言创建保存目录
+for dir_path in target_dialects.values():
+    os.makedirs(dir_path, exist_ok=True)
+
+# 3. 加载数据集 (流式模式)
+print("正在连接数据集...")
+dataset = load_dataset(
+    "TwinkStart/KeSpeech",
+    split="train",          # 根据实际需要，也可能是 "test"
+    streaming=True,
+    mirror="https://hf-mirror.com"
+)
+print("数据集连接成功！")
+
+# 4. 遍历数据集，筛选并保存
+print("开始筛选并下载音频...")
+count = {dialect: 0 for dialect in target_dialects}
+
+for i, sample in enumerate(dataset):
+    # 假设方言信息在 'Dialect' 列中，请根据实际情况调整列名
+    dialect = sample.get('Dialect', '')
+    
+    # 检查当前样本的方言是否在目标列表中
+    if dialect in target_dialects:
+        # 获取音频数据和采样率
+        audio = sample['audio']
+        audio_array = audio['array']
+        sampling_rate = audio['sampling_rate']
+        
+        # 生成文件名 (使用样本的ID或索引)
+        # 假设ID在 'ID' 列中，请根据实际情况调整
+        file_id = sample.get('ID', f'sample_{i}')
+        save_path = os.path.join(target_dialects[dialect], f"{file_id}.wav")
+        
+        # 保存为 WAV 文件
+        sf.write(save_path, audio_array, sampling_rate)
+        count[dialect] += 1
+        print(f"已保存: {save_path}")
+
+    # 可选：每处理1000个样本打印一次进度
+    if i % 1000 == 0:
+        print(f"已处理 {i} 个样本...")
+
+print("下载完成！统计信息：")
+for dialect, num in count.items():
+    print(f"  {dialect}: {num} 个文件")
