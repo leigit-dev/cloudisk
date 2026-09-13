@@ -1,0 +1,198 @@
+<!-- ============================================================
+     templates/editor.html
+     ============================================================ -->
+{% extends "base.html" %}
+{% block title %}{{ node.name }} · 编辑{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.32.6/src-noconflict/ace.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.32.6/src-noconflict/ext-language_tools.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.32.6/src-noconflict/ext-searchbox.js"></script>
+{% endblock %}
+
+{% block body %}
+<div class="editor-page">
+
+  <div class="editor-top glass">
+    <div class="editor-file">
+      <span style="font-size:22px;">📜</span>
+      <div style="min-width:0;">
+        <div class="name">{{ node.name }}</div>
+        <div class="meta">{{ (node.size / 1024) | round(1) }} KB ·
+          {{ node.updated_at.strftime('%Y-%m-%d %H:%M') }}</div>
+      </div>
+    </div>
+
+    <div class="editor-actions">
+      <span class="save-state" id="saveState">已保存</span>
+      <button class="icon-btn" id="themeBtn" title="切换主题">🌙</button>
+      <button class="btn" id="formatBtn">格式化</button>
+      <button class="btn btn-primary" id="saveBtn">💾 保存</button>
+      <a class="btn" href="{{ url_for('files') }}">← 返回</a>
+    </div>
+  </div>
+
+  <div class="editor-shell glass">
+    <div id="aceEditor"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+const NODE_ID   = {{ node.id }};
+const FILENAME  = {{ node.name|tojson }};
+const CONTENT   = {{ content|tojson }};
+const SAVED_SIZE = {{ node.size|int }};
+
+/* ---------- 语言推断 ---------- */
+const EXT_MODE = {
+  js:'javascript', mjs:'javascript', cjs:'javascript', jsx:'jsx', tsx:'typescript',
+  ts:'typescript', py:'python', pyw:'python', html:'html', htm:'html', vue:'html',
+  css:'css', scss:'scss', sass:'sass', less:'less', json:'json', json5:'json5',
+  md:'markdown', markdown:'markdown', rst:'rst', java:'java',
+  c:'c_cpp', cpp:'c_cpp', cc:'c_cpp', cxx:'c_cpp', h:'c_cpp', hpp:'c_cpp',
+  cs:'csharp', go:'golang', php:'php', rb:'ruby', rs:'rust', swift:'swift',
+  kt:'kotlin', scala:'scala', groovy:'groovy', gradle:'groovy', dart:'dart',
+  r:'r', sql:'sql', lua:'lua', pl:'perl', xml:'xml', svg:'xml',
+  yaml:'yaml', yml:'yaml', sh:'sh', bash:'sh', zsh:'sh',
+  ps1:'powershell', bat:'batchfile', cmd:'batchfile', vbs:'vbscript',
+  toml:'toml', ini:'ini', cfg:'ini', conf:'ini', properties:'properties',
+  diff:'diff', patch:'diff', tex:'latex', lisp:'lisp', erl:'erlang',
+  hs:'haskell', ml:'ocaml', pas:'pascal', v:'verilog', vhdl:'vhdl',
+  m:'matlab', asm:'assembly_x86', coffee:'coffee', hx:'haxe', jsp:'jsp',
+  txt:'text', log:'text', csv:'text', env:'text', dockerfile:'dockerfile',
+  makefile:'makefile', cmake:'cmake',
+};
+
+function detectMode(name) {
+  const lower = name.toLowerCase();
+  if (lower === 'dockerfile') return 'dockerfile';
+  if (lower === 'makefile' || lower === 'gnumakefile') return 'makefile';
+  if (lower === 'cmakelists.txt') return 'cmake';
+  const dot = lower.lastIndexOf('.');
+  if (dot < 0) return 'text';
+  const ext = lower.slice(dot + 1);
+  return EXT_MODE[ext] || 'text';
+}
+
+/* ---------- Ace 初始化 ---------- */
+ace.config.set('basePath',
+  'https://cdn.jsdelivr.net/npm/ace-builds@1.32.6/src-noconflict/');
+
+const editor = ace.edit('aceEditor');
+editor.session.setMode('ace/mode/' + detectMode(FILENAME));
+editor.setValue(CONTENT, -1);
+
+editor.setOptions({
+  fontSize: '14px',
+  fontFamily: '"Fira Code", Consolas, "SFMono-Regular", monospace',
+  showPrintMargin: false,
+  tabSize: 4,
+  useSoftTabs: true,
+  wrap: false,
+  enableBasicAutocompletion: true,
+  enableLiveAutocompletion: true,
+  enableSnippets: true,
+  scrollPastEnd: 0.3,
+});
+
+function applyEditorTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  editor.setTheme(dark ? 'ace/theme/tomorrow_night' : 'ace/theme/chrome');
+  document.querySelector('.editor-shell').style.background =
+    dark ? '#1d2333' : '#ffffff';
+}
+applyEditorTheme();
+
+/* ---------- 主题切换 ---------- */
+const themeBtn = document.getElementById('themeBtn');
+function syncThemeIcon() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  themeBtn.textContent = dark ? '☀️' : '🌙';
+}
+syncThemeIcon();
+
+themeBtn.addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('cd_theme', next); } catch (e) {}
+  syncThemeIcon();
+  applyEditorTheme();
+  editor.resize();
+});
+
+/* ---------- 脏标记 ---------- */
+let dirty = false;
+const stateEl = document.getElementById('saveState');
+
+function setDirty(v) {
+  dirty = v;
+  stateEl.className = 'save-state ' + (v ? 'dirty' : 'saved');
+  stateEl.textContent = v ? '● 未保存' : '已保存';
+}
+
+editor.session.on('change', () => { if (!dirty) setDirty(true); });
+setDirty(false);
+
+/* ---------- 保存 ---------- */
+async function save() {
+  const content = editor.getValue();
+  stateEl.className = 'save-state';
+  stateEl.textContent = '保存中…';
+  try {
+    const res = await fetch('/api/save/' + NODE_ID, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || '保存失败');
+    setDirty(false);
+  } catch (e) {
+    stateEl.className = 'save-state dirty';
+    stateEl.textContent = '保存失败：' + e.message;
+  }
+}
+
+document.getElementById('saveBtn').addEventListener('click', save);
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    save();
+  }
+});
+
+// 离开页面提醒
+window.addEventListener('beforeunload', e => {
+  if (dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ---------- 简单格式化（JSON） ---------- */
+document.getElementById('formatBtn').addEventListener('click', () => {
+  const mode = editor.session.getMode().$id || '';
+  if (mode.includes('json')) {
+    try {
+      const obj = JSON.parse(editor.getValue());
+      editor.setValue(JSON.stringify(obj, null, 2), -1);
+      setDirty(true);
+    } catch (e) {
+      alert('JSON 格式错误：' + e.message);
+    }
+  } else {
+    // 通用：去掉行尾空白
+    const lines = editor.getValue().split('\n').map(l => l.replace(/\s+$/, ''));
+    editor.setValue(lines.join('\n'), -1);
+    setDirty(true);
+  }
+});
+
+window.addEventListener('resize', () => editor.resize());
+
+})();
+</script>
+{% endblock %}

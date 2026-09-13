@@ -1,0 +1,51 @@
+<!-- ============================================================
+     templates/login.html
+     ============================================================ -->
+{% extends "base.html" %}
+{% block title %}{{ '注册' if mode == 'register' else '登录' }} · ClouDisk{% endblock %}
+
+{% block body %}
+<div class="auth-wrap">
+  <div class="auth-card glass">
+    <div class="auth-logo">☁</div>
+    <h1 class="auth-title">ClouDisk</h1>
+    <p class="auth-sub">{{ '创建一个新账号' if mode == 'register' else '登录以继续' }}</p>
+
+    {% if error %}
+    <div class="auth-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" class="auth-form">
+      <div class="field">
+        <label>用户名</label>
+        <input type="text" name="username" value="{{ username or '' }}"
+               placeholder="请输入用户名" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" name="password" placeholder="请输入密码"
+               autocomplete="{{ 'new-password' if mode == 'register' else 'current-password' }}" required>
+      </div>
+      {% if mode == 'register' %}
+      <div class="field">
+        <label>确认密码</label>
+        <input type="password" name="confirm" placeholder="再次输入密码"
+               autocomplete="new-password" required>
+      </div>
+      {% endif %}
+
+      <button type="submit" class="btn btn-primary btn-block">
+        {{ '注册并登录' if mode == 'register' else '登 录' }}
+      </button>
+    </form>
+
+    <div class="auth-switch">
+      {% if mode == 'register' %}
+        已有账号？<a href="{{ url_for('login') }}">去登录</a>
+      {% else %}
+        还没有账号？<a href="{{ url_for('register') }}">注册一个</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

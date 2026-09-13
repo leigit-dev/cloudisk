@@ -1,0 +1,1333 @@
+{% extends "base.html" %}
+{% block title %}ClouDisk · 我的文件{% endblock %}
+
+{% block head %}
+<style>
+/* ---- 配额相关的存储条状态 ---- */
+.storage-fill.none  { background: var(--text-faint); opacity: .55; }
+.storage-fill.warn  { background: linear-gradient(90deg, var(--warning), #fbbf24); }
+.storage-fill.full  { background: linear-gradient(90deg, var(--danger), #f87171); }
+
+/* ---- 上传按钮禁用观感 ---- */
+.btn.btn-upload.is-disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  filter: grayscale(.35);
+}
+
+/* ---- 上传队列中的配额错误高亮 ---- */
+.up-item.quota-error .up-fill { background: var(--warning); }
+.up-item.quota-error .up-pct  { color: var(--warning); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="app">
+
+  <!-- ========== 顶栏 ========== -->
+  <header class="topbar glass">
+    <div class="brand">
+      <div class="brand-logo">☁</div>
+      <span class="brand-name">ClouDisk</span>
+    </div>
+
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input id="searchInput" type="text" placeholder="搜索文件…" autocomplete="off">
+      <button class="search-clear" id="searchClear" hidden>✕</button>
+    </div>
+
+    <div class="topbar-actions">
+      <button class="icon-btn" id="themeBtn" title="切换主题">🌙</button>
+      <div class="user-chip">
+        <span class="uname">{{ user.username }}</span>
+        <a href="{{ url_for('logout') }}" class="logout-link">退出</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== 主体 ========== -->
+  <div class="layout">
+
+    <!-- 侧栏 -->
+    <aside class="sidebar glass">
+      <a class="nav-item active" data-kind="all"><span class="emoji">📁</span>全部文件</a>
+      <a class="nav-item" data-kind="image"><span class="emoji">🖼️</span>图片</a>
+      <a class="nav-item" data-kind="video"><span class="emoji">🎬</span>视频</a>
+      <a class="nav-item" data-kind="audio"><span class="emoji">🎵</span>音频</a>
+      <a class="nav-item" data-kind="doc"><span class="emoji">📄</span>文档</a>
+
+      <div class="storage-box">
+        <div class="storage-label" id="storageLabel">已用空间</div>
+        <div class="storage-bar">
+          <div class="storage-fill" id="storageFill"></div>
+        </div>
+        <div class="storage-text" id="storageText">—</div>
+        <div class="storage-text" id="storageRemain" style="margin-top:3px;"></div>
+      </div>
+    </aside>
+
+    <!-- 主区 -->
+    <main class="main">
+      <div class="toolbar glass">
+        <div class="breadcrumb" id="breadcrumb"></div>
+        <div class="toolbar-right">
+          <button class="btn btn-primary btn-upload" id="uploadBtn">⬆ 上传</button>
+          <button class="btn" id="mkdirBtn">＋ 新建文件夹</button>
+          <button class="icon-btn" id="viewBtn" title="切换视图">▦</button>
+        </div>
+      </div>
+
+      <div class="file-area" id="fileArea"></div>
+    </main>
+  </div>
+</div>
+
+<!-- 隐藏的 input -->
+<input type="file" id="fileInput" multiple hidden>
+<input type="file" id="folderInput" webkitdirectory directory multiple hidden>
+
+<!-- ========== 批量操作栏 ========== -->
+<div class="batch-bar glass" id="batchBar">
+  <span class="batch-count">已选 <b id="batchCount">0</b> 项</span>
+  <div class="batch-actions">
+    <button class="btn btn-sm" data-act="download">⬇ 下载</button>
+    <button class="btn btn-sm" data-act="move">↔ 移动</button>
+    <button class="btn btn-sm" data-act="copy">⧉ 复制</button>
+    <button class="btn btn-sm btn-danger" data-act="delete">🗑 删除</button>
+    <button class="btn btn-sm" data-act="clear">取消</button>
+  </div>
+</div>
+
+<!-- ========== 上传进度面板 ========== -->
+<div class="upload-panel glass" id="uploadPanel">
+  <div class="upload-head">
+    <span class="upload-title">📤 上传队列</span>
+    <span class="upload-summary" id="uploadSummary"></span>
+  </div>
+  <div class="upload-list" id="uploadList"></div>
+</div>
+
+<!-- ========== 通用模态框 ========== -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal glass" id="modalBox"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- JSZip：前端打包下载 -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+<script>
+(function () {
+'use strict';
+
+/* ============================================================
+   状态
+   ============================================================ */
+const state = {
+  folder: null,
+  kind: 'all',
+  search: '',
+  items: [],
+  selected: new Set(),
+  view: localStorage.getItem('cd_view') || 'grid',
+  breadcrumb: [],
+
+  // 配额相关
+  quota:     0,      // 字节
+  used:      0,
+  remaining: 0,
+  canUpload: false,
+};
+
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+/* ============================================================
+   小工具
+   ============================================================ */
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+async function api(url, opts) {
+  const res = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}));
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok || !data || data.success === false) {
+    const err = new Error((data && data.error) || ('HTTP ' + res.status));
+    err.code = (data && data.code) || null;
+    throw err;
+  }
+  return data;
+}
+
+function postJSON(url, body) {
+  return api(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+/* ============================================================
+   文件图标
+   ============================================================ */
+const EXT_GROUP = {
+  image: ['png','jpg','jpeg','gif','webp','bmp','svg','ico','avif','heic','tiff'],
+  video: ['mp4','webm','mkv','mov','avi','m4v','flv','wmv','mpeg','mpg'],
+  audio: ['mp3','wav','ogg','flac','m4a','aac','opus','wma','mid'],
+  pdf:   ['pdf'],
+  code:  ['js','mjs','cjs','ts','tsx','jsx','py','java','c','cpp','cc','h','hpp',
+          'cs','go','rs','rb','php','swift','kt','scala','sql','sh','bash','zsh',
+          'json','xml','yml','yaml','toml','ini','env','conf','css','scss','less',
+          'html','htm','vue','svelte','lua','pl','r','dart','gradle','makefile'],
+  zip:   ['zip','rar','7z','tar','gz','bz2','xz','iso'],
+  doc:   ['doc','docx','rtf','odt','txt','md','markdown','tex','log'],
+  sheet: ['xls','xlsx','csv','tsv','ods'],
+  slide: ['ppt','pptx','odp','key'],
+  font:  ['ttf','otf','woff','woff2','eot'],
+};
+
+const ICONS = {
+  dir: '📁', image: '🖼️', video: '🎬', audio: '🎵', pdf: '📕',
+  code: '📜', zip: '🗜️', doc: '📄', sheet: '📊', slide: '📽️',
+  font: '🔤', file: '📄',
+};
+
+function iconFor(item) {
+  if (item.is_dir) return ICONS.dir;
+  const ext = (item.ext || '').toLowerCase();
+  for (const g in EXT_GROUP) {
+    if (EXT_GROUP[g].includes(ext)) return ICONS[g];
+  }
+  return ICONS.file;
+}
+
+function isImage(item) { return (item.mime || '').startsWith('image/'); }
+function isVideo(item) { return (item.mime || '').startsWith('video/'); }
+function isAudio(item) { return (item.mime || '').startsWith('audio/'); }
+function isPdf(item)   { return (item.mime || '').includes('pdf'); }
+function isText(item) {
+  const m = item.mime || '';
+  if (m.startsWith('text/')) return true;
+  if (m.includes('json') || m.includes('xml') || m.includes('javascript')) return true;
+  const ext = (item.ext || '').toLowerCase();
+  return EXT_GROUP.code.includes(ext) || ['txt','md','log','csv','ini','env','conf'].includes(ext);
+}
+
+/* ============================================================
+   数据加载
+   ============================================================ */
+async function load(folderId) {
+  if (folderId !== undefined) state.folder = folderId;
+  const params = new URLSearchParams();
+  if (state.search) {
+    params.set('q', state.search);
+  } else {
+    if (state.folder) params.set('folder', state.folder);
+    if (state.kind !== 'all') params.set('kind', state.kind);
+  }
+
+  const area = $('#fileArea');
+  area.innerHTML = '<div class="empty-state"><div class="icon">⏳</div></div>';
+
+  try {
+    const data = await api('/api/list?' + params.toString());
+    state.items = data.items || [];
+    state.breadcrumb = data.breadcrumb || [];
+    state.selected.clear();
+    render();
+    updateBatchBar();
+  } catch (e) {
+    area.innerHTML = `<div class="empty-state">
+        <div class="icon">⚠️</div><h3>加载失败</h3><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+/* ------------------------------------------------------------
+   存储 / 配额卡片
+   ------------------------------------------------------------ */
+async function loadStats() {
+  try {
+    const d = await api('/api/stats');
+
+    const used    = d.used || 0;
+    const quota   = d.quota || 0;
+    const remain  = d.remaining || 0;
+    const canUp   = !!d.can_upload;
+
+    state.quota     = quota;
+    state.used      = used;
+    state.remaining = remain;
+    state.canUpload = canUp;
+
+    const fill = $('#storageFill');
+    fill.classList.remove('none', 'warn', 'full');
+
+    let pct = 0;
+    if (quota > 0) pct = Math.min(100, used / quota * 100);
+
+    if (quota <= 0) {
+      // 未分配配额：灰条铺满，明确表达"无配额"状态
+      fill.classList.add('none');
+      fill.style.width = '100%';
+    } else {
+      fill.style.width = pct.toFixed(1) + '%';
+      if (pct >= 90)      fill.classList.add('full');
+      else if (pct >= 70) fill.classList.add('warn');
+    }
+
+    // 主行文字
+    let mainText;
+    if (quota <= 0) {
+      mainText = `已用 ${d.used_text || fmtSize(used)} · 未分配配额`;
+    } else {
+      mainText = `${d.used_text || fmtSize(used)} / ${d.quota_text || fmtSize(quota)}`;
+    }
+    $('#storageText').textContent = mainText;
+
+    // 第二行：剩余
+    const remainEl = $('#storageRemain');
+    if (quota <= 0) {
+      remainEl.textContent = '请联系管理员分配空间';
+      remainEl.style.color = 'var(--warning)';
+    } else if (remain <= 0) {
+      remainEl.textContent = '空间已满';
+      remainEl.style.color = 'var(--danger)';
+    } else {
+      remainEl.textContent = `剩余 ${d.remaining_text || fmtSize(remain)}`;
+      remainEl.style.color = '';
+    }
+
+    // 上传按钮视觉状态
+    const upBtn = $('#uploadBtn');
+    if (upBtn) upBtn.classList.toggle('is-disabled', !canUp);
+
+  } catch (e) { /* 静默 */ }
+}
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function render() {
+  renderBreadcrumb();
+  renderFiles();
+}
+
+function renderBreadcrumb() {
+  const bc = $('#breadcrumb');
+  if (state.search) {
+    bc.innerHTML = `<span class="crumb current">🔍 搜索「${esc(state.search)}」的结果</span>`;
+    return;
+  }
+  const parts = [];
+  parts.push(`<span class="crumb${state.breadcrumb.length === 0 ? ' current' : ''}"
+                data-goto="root">全部文件</span>`);
+
+  state.breadcrumb.forEach((c, i) => {
+    parts.push('<span class="crumb-sep">›</span>');
+    const isLast = i === state.breadcrumb.length - 1;
+    parts.push(`<span class="crumb${isLast ? ' current' : ''}"
+                  data-goto="${c.id}">${esc(c.name)}</span>`);
+  });
+
+  bc.innerHTML = parts.join('');
+  $$('.crumb', bc).forEach(el => {
+    el.addEventListener('click', () => {
+      if (el.classList.contains('current')) return;
+      const g = el.dataset.goto;
+      state.search = '';
+      $('#searchInput').value = '';
+      $('#searchClear').hidden = true;
+      load(g === 'root' ? null : Number(g));
+    });
+  });
+}
+
+function renderFiles() {
+  const area = $('#fileArea');
+
+  if (!state.items.length) {
+    area.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">${state.search ? '🔍' : '📂'}</div>
+        <h3>${state.search ? '没有找到匹配的文件' : '这里还什么都没有'}</h3>
+        <p>${state.search ? '试试其他关键词' : '拖拽文件到页面，或点击右上角上传'}</p>
+      </div>`;
+    return;
+  }
+
+  if (state.view === 'grid') {
+    area.innerHTML = `<div class="grid">${state.items.map(gridItemHTML).join('')}</div>`;
+  } else {
+    area.innerHTML = `
+      <div class="list">
+        <div class="list-head">
+          <div></div><div></div><div>名称</div><div>大小</div><div>修改时间</div><div></div>
+        </div>
+        ${state.items.map(listRowHTML).join('')}
+      </div>`;
+  }
+  bindItemEvents();
+}
+
+function gridItemHTML(item) {
+  const thumb = isImage(item)
+    ? `<img src="/api/raw/${item.id}" alt="" loading="lazy"
+            onerror="this.replaceWith(document.createTextNode('🖼️'))">`
+    : `<span>${iconFor(item)}</span>`;
+
+  const sel = state.selected.has(item.id) ? ' selected' : '';
+  return `
+    <div class="grid-item${sel}" data-id="${item.id}" data-dir="${item.is_dir ? 1 : 0}">
+      <input type="checkbox" class="checkbox grid-check" ${sel ? 'checked' : ''}>
+      <button class="grid-menu" data-menu="${item.id}">⋯</button>
+      <div class="grid-thumb">${thumb}</div>
+      <div class="grid-name" title="${esc(item.name)}">${esc(item.name)}</div>
+      <div class="grid-meta">${item.is_dir ? '文件夹' : fmtSize(item.size)}</div>
+    </div>`;
+}
+
+function listRowHTML(item) {
+  const sel = state.selected.has(item.id) ? ' selected' : '';
+  return `
+    <div class="list-row${item.is_dir ? ' is-dir' : ''}${sel}"
+         data-id="${item.id}" data-dir="${item.is_dir ? 1 : 0}">
+      <input type="checkbox" class="checkbox" ${sel ? 'checked' : ''}>
+      <div class="list-icon">${iconFor(item)}</div>
+      <div class="list-name" title="${esc(item.name)}">${esc(item.name)}</div>
+      <div class="list-meta">${item.is_dir ? '—' : fmtSize(item.size)}</div>
+      <div class="list-meta">${esc(item.updated_at || '')}</div>
+      <button class="list-menu" data-menu="${item.id}">⋯</button>
+    </div>`;
+}
+
+function bindItemEvents() {
+  $$('.grid-item, .list-row').forEach(el => {
+    const id = Number(el.dataset.id);
+    const isDir = el.dataset.dir === '1';
+
+    const cb = el.querySelector('.checkbox');
+    if (cb) {
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', () => toggleSelect(id, cb.checked));
+    }
+
+    const menuBtn = el.querySelector('[data-menu]');
+    if (menuBtn) {
+      menuBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        openItemMenu(id, e.clientX, e.clientY);
+      });
+    }
+
+    el.addEventListener('click', e => {
+      if (e.target.closest('.checkbox') || e.target.closest('[data-menu]')) return;
+      if (e.ctrlKey || e.metaKey) {
+        toggleSelect(id, !state.selected.has(id));
+        return;
+      }
+      if (isDir) {
+        enterFolder(id);
+      } else {
+        const item = state.items.find(i => i.id === id);
+        if (item) openPreview(item);
+      }
+    });
+  });
+}
+
+function toggleSelect(id, on) {
+  if (on) state.selected.add(id);
+  else state.selected.delete(id);
+  renderFiles();
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  const bar = $('#batchBar');
+  const n = state.selected.size;
+  $('#batchCount').textContent = n;
+  bar.classList.toggle('show', n > 0);
+}
+
+function enterFolder(id) {
+  state.search = '';
+  $('#searchInput').value = '';
+  $('#searchClear').hidden = true;
+  load(id);
+}
+
+/* ============================================================
+   菜单
+   ============================================================ */
+function openItemMenu(id, x, y) {
+  const item = state.items.find(i => i.id === id);
+  if (!item) return;
+
+  const entries = [];
+  if (!item.is_dir) {
+    entries.push({ label: '👁 预览', fn: () => openPreview(item) });
+    entries.push({ label: '⬇ 下载', fn: () => {
+      const a = document.createElement('a');
+      a.href = '/api/download/' + item.id;
+      a.download = item.name;
+      document.body.appendChild(a); a.click(); a.remove();
+    }});
+    if (isText(item)) {
+      entries.push({ label: '✏️ 编辑', fn: () => {
+        window.open('/editor/' + item.id, '_blank');
+      }});
+    }
+  } else {
+    entries.push({ label: '📂 打开', fn: () => enterFolder(item.id) });
+  }
+  entries.push({ label: '✎ 重命名', fn: () => promptRename(item) });
+  entries.push({ label: '↔ 移动到…', fn: () => promptMove([item.id]) });
+  entries.push({ label: '⧉ 复制到…', fn: () => promptCopy([item.id]) });
+  entries.push({ label: '🗑 删除', fn: () => doDelete([item.id]) });
+
+  showContextMenu(x, y, entries);
+}
+
+function showContextMenu(x, y, entries) {
+  const old = $('#ctxMenu');
+  if (old) old.remove();
+
+  const menu = document.createElement('div');
+  menu.id = 'ctxMenu';
+  menu.className = 'glass';
+  menu.style.cssText = `
+    position:fixed; z-index:2500; min-width:150px; padding:6px;
+    border-radius:12px; font-size:13.5px;`;
+
+  entries.forEach(en => {
+    const b = document.createElement('div');
+    b.textContent = en.label;
+    b.style.cssText = 'padding:8px 12px;border-radius:8px;cursor:pointer;';
+    b.onmouseenter = () => b.style.background = 'var(--surface-hover)';
+    b.onmouseleave = () => b.style.background = 'transparent';
+    b.onclick = () => { menu.remove(); en.fn(); };
+    menu.appendChild(b);
+  });
+
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, innerWidth - r.width - 10) + 'px';
+  menu.style.top  = Math.min(y, innerHeight - r.height - 10) + 'px';
+
+  setTimeout(() => {
+    const close = ev => {
+      if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', close); }
+    };
+    document.addEventListener('click', close);
+  }, 0);
+}
+
+/* ============================================================
+   模态框
+   ============================================================ */
+const modalMask = $('#modalMask');
+const modalBox  = $('#modalBox');
+
+function openModal(html, cls) {
+  modalBox.className = 'modal glass' + (cls ? ' ' + cls : '');
+  modalBox.innerHTML = html;
+  modalMask.classList.add('show');
+}
+function closeModal() {
+  modalMask.classList.remove('show');
+  modalBox.innerHTML = '';
+}
+modalMask.addEventListener('click', e => { if (e.target === modalMask) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ---------- 新建文件夹 ---------- */
+$('#mkdirBtn').addEventListener('click', () => {
+  openModal(`
+    <h3 class="modal-title">新建文件夹</h3>
+    <input class="form-input" id="mInput" placeholder="文件夹名称" maxlength="120">
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn btn-primary" id="mOk">创建</button>
+    </div>`);
+
+  const input = $('#mInput');
+  input.focus();
+  const submit = async () => {
+    const name = input.value.trim();
+    if (!name) return;
+    try {
+      await postJSON('/api/mkdir', { name, parent: state.folder });
+      closeModal();
+      showToast('文件夹已创建', 'success');
+      load();
+    } catch (e) { showToast(e.message, 'error'); }
+  };
+  $('#mOk').onclick = submit;
+  input.onkeydown = e => { if (e.key === 'Enter') submit(); };
+  modalBox.querySelector('[data-close]').onclick = closeModal;
+});
+
+/* ---------- 重命名 ---------- */
+function promptRename(item) {
+  openModal(`
+    <h3 class="modal-title">重命名</h3>
+    <input class="form-input" id="mInput" value="${esc(item.name)}" maxlength="120">
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn btn-primary" id="mOk">确定</button>
+    </div>`);
+
+  const input = $('#mInput');
+  input.focus();
+  const dot = item.name.lastIndexOf('.');
+  if (dot > 0) input.setSelectionRange(0, dot); else input.select();
+
+  const submit = async () => {
+    const name = input.value.trim();
+    if (!name) return;
+    try {
+      await postJSON('/api/rename', { id: item.id, name });
+      closeModal();
+      showToast('已重命名', 'success');
+      load();
+    } catch (e) { showToast(e.message, 'error'); }
+  };
+  $('#mOk').onclick = submit;
+  input.onkeydown = e => { if (e.key === 'Enter') submit(); };
+  modalBox.querySelector('[data-close]').onclick = closeModal;
+}
+
+/* ---------- 移动 / 复制：文件夹树选择 ---------- */
+async function promptMove(ids) { await promptTree(ids, 'move'); }
+async function promptCopy(ids) { await promptTree(ids, 'copy'); }
+
+async function promptTree(ids, mode) {
+  let tree = [];
+  try {
+    const d = await api('/api/tree');
+    tree = d.tree || [];
+  } catch (e) { /* ignore */ }
+
+  let chosen = null;
+
+  function renderNodes(nodes) {
+    if (!nodes.length) return '';
+    return nodes.map(n => `
+      <div class="tree-node">
+        <div class="tree-label" data-id="${n.id}">
+          ${n.children.length ? '<span class="tree-toggle">▶</span>' : '<span class="tree-toggle"></span>'}
+          <span>📁</span><span>${esc(n.name)}</span>
+        </div>
+        <div class="tree-children">${renderNodes(n.children)}</div>
+      </div>`).join('');
+  }
+
+  openModal(`
+    <h3 class="modal-title">${mode === 'move' ? '移动到' : '复制到'}</h3>
+    <div class="tree-box" id="treeBox">
+      <div class="tree-node root">
+        <div class="tree-label active" data-id="">
+          <span class="tree-toggle"></span><span>🏠</span><span>全部文件（根目录）</span>
+        </div>
+      </div>
+      ${renderNodes(tree)}
+    </div>
+    <div class="modal-actions">
+      <button class="btn" data-close>取消</button>
+      <button class="btn btn-primary" id="mOk">确定</button>
+    </div>`);
+
+  const box = $('#treeBox');
+  box.addEventListener('click', e => {
+    const toggle = e.target.closest('.tree-toggle');
+    if (toggle) {
+      const node = toggle.closest('.tree-node');
+      node.classList.toggle('open');
+      toggle.textContent = node.classList.contains('open') ? '▼' : '▶';
+      e.stopPropagation();
+      return;
+    }
+    const label = e.target.closest('.tree-label');
+    if (!label) return;
+    box.querySelectorAll('.tree-label.active').forEach(l => l.classList.remove('active'));
+    label.classList.add('active');
+    chosen = label.dataset.id ? Number(label.dataset.id) : null;
+  });
+
+  modalBox.querySelector('[data-close]').onclick = closeModal;
+
+  $('#mOk').onclick = async () => {
+    try {
+      const url = mode === 'move' ? '/api/move' : '/api/copy';
+      const d = await postJSON(url, { ids, target: chosen });
+      closeModal();
+      showToast((mode === 'move' ? '已移动 ' : '已复制 ') + d.count + ' 项', 'success');
+      load();
+      loadStats();
+    } catch (e) {
+      // 复制时更容易触发配额超限
+      if (e.code === 'QUOTA_EXCEEDED') showToast(e.message, 'error');
+      else showToast(e.message, 'error');
+    }
+  };
+}
+
+/* ---------- 删除 ---------- */
+async function doDelete(ids) {
+  if (!ids.length) return;
+  const ok = await confirmBox(`确定删除选中的 ${ids.length} 项吗？`,
+                              '文件夹内的所有内容也会被一并删除，此操作不可恢复。');
+  if (!ok) return;
+  try {
+    const d = await postJSON('/api/delete', { ids });
+    showToast('已删除 ' + d.count + ' 项', 'success');
+    state.selected.clear();
+    load();
+    loadStats();
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+function confirmBox(title, sub) {
+  return new Promise(resolve => {
+    openModal(`
+      <h3 class="modal-title">${esc(title)}</h3>
+      ${sub ? `<p style="margin:0;color:var(--text-dim);font-size:13px;">${esc(sub)}</p>` : ''}
+      <div class="modal-actions">
+        <button class="btn" data-close>取消</button>
+        <button class="btn btn-danger" id="mOk">确定删除</button>
+      </div>`);
+    modalBox.querySelector('[data-close]').onclick = () => { closeModal(); resolve(false); };
+    $('#mOk').onclick = () => { closeModal(); resolve(true); };
+  });
+}
+
+/* ============================================================
+   批量操作栏
+   ============================================================ */
+$('#batchBar').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const act = btn.dataset.act;
+  const ids = Array.from(state.selected);
+
+  if (act === 'clear') { state.selected.clear(); renderFiles(); updateBatchBar(); return; }
+  if (act === 'download') { await batchDownload(ids); return; }
+  if (act === 'delete') { await doDelete(ids); return; }
+  if (act === 'move')   { await promptMove(ids); return; }
+  if (act === 'copy')   { await promptCopy(ids); return; }
+});
+
+/* ============================================================
+   JSZip 批量打包下载
+   ============================================================ */
+async function batchDownload(ids) {
+  if (!ids.length) return;
+  if (typeof JSZip === 'undefined') {
+    showToast('JSZip 未加载，请检查网络后刷新', 'error');
+    return;
+  }
+
+  showToast('正在收集文件列表…');
+
+  let files = [];
+  try {
+    const d = await postJSON('/api/collect', { ids });
+    files = d.files || [];
+  } catch (e) { showToast(e.message, 'error'); return; }
+
+  if (!files.length) { showToast('没有可下载的文件', 'error'); return; }
+
+  const panel = document.createElement('div');
+  panel.className = 'upload-panel glass show';
+  panel.style.bottom = 'auto';
+  panel.style.top = '22px';
+  panel.innerHTML = `
+    <div class="upload-head">
+      <span class="upload-title">📦 打包下载</span>
+      <span class="upload-summary" id="zipCount">0 / ${files.length}</span>
+    </div>
+    <div class="upload-list">
+      <div class="up-item" id="zipItem">
+        <div class="up-row"><span class="up-name" id="zipName">准备中…</span>
+        <span class="up-pct" id="zipPct">0%</span></div>
+        <div class="up-bar"><div class="up-fill" id="zipFill"></div></div>
+      </div>
+    </div>`;
+  document.body.appendChild(panel);
+
+  const zip = new JSZip();
+  const used = new Set();
+  let doneBytes = 0;
+  const totalBytes = files.reduce((a, f) => a + (f.size || 0), 0);
+
+  function updateZip(name, pct) {
+    $('#zipName').textContent = name;
+    $('#zipPct').textContent = Math.round(pct) + '%';
+    $('#zipFill').style.width = Math.min(100, pct) + '%';
+  }
+
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      $('#zipCount').textContent = `${i + 1} / ${files.length}`;
+      updateZip(f.name, totalBytes ? doneBytes / totalBytes * 100 : (i / files.length * 100));
+
+      try {
+        const res = await fetch('/api/raw/' + f.id, { credentials: 'same-origin' });
+        if (!res.ok) continue;
+        const blob = await res.blob();
+
+        let path = (f.path || '') + f.name;
+        if (used.has(path)) {
+          const dot = f.name.lastIndexOf('.');
+          const stem = dot > 0 ? f.name.slice(0, dot) : f.name;
+          const ext  = dot > 0 ? f.name.slice(dot) : '';
+          let k = 1;
+          while (used.has((f.path || '') + `${stem} (${k})${ext}`)) k++;
+          path = (f.path || '') + `${stem} (${k})${ext}`;
+        }
+        used.add(path);
+        zip.file(path, blob);
+        doneBytes += blob.size;
+      } catch (err) {
+        console.warn('跳过', f.name, err);
+      }
+    }
+
+    updateZip('正在压缩…', 100);
+    const zipBlob = await zip.generateAsync(
+      { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 } },
+      meta => { updateZip('正在压缩…', meta.percent); }
+    );
+
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ClouDisk_${Date.now()}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+    showToast(`打包完成 · ${fmtSize(zipBlob.size)}`, 'success');
+  } catch (e) {
+    showToast('打包失败：' + e.message, 'error');
+  } finally {
+    setTimeout(() => panel.remove(), 1200);
+  }
+}
+
+/* ============================================================
+   预览
+   ============================================================ */
+async function openPreview(item) {
+  const url = '/api/raw/' + item.id;
+  let body = '';
+
+  if (isImage(item)) {
+    body = `<img src="${url}" alt="${esc(item.name)}">`;
+  } else if (isVideo(item)) {
+    body = `<video src="${url}" controls autoplay playsinline></video>`;
+  } else if (isAudio(item)) {
+    body = `<audio src="${url}" controls autoplay></audio>`;
+  } else if (isPdf(item)) {
+    body = `<iframe src="${url}"></iframe>`;
+  } else if (isText(item)) {
+    body = `<pre class="preview-text" id="pvText">加载中…</pre>`;
+  } else {
+    body = `<div class="preview-unsupported">
+              <span class="icon">${iconFor(item)}</span>
+              该格式暂不支持在线预览<br>
+              <button class="btn btn-primary" style="margin-top:16px" id="pvDownload">下载文件</button>
+            </div>`;
+  }
+
+  openModal(`
+    <h3 class="modal-title" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.name)}</span>
+      <span style="font-size:12px;color:var(--text-faint);font-weight:400;flex-shrink:0;">
+        ${fmtSize(item.size)}
+      </span>
+    </h3>
+    <div class="preview-body">${body}</div>
+    <div class="modal-actions">
+      <button class="btn" data-close>关闭</button>
+      ${isText(item) ? `<button class="btn" id="pvEdit">✏️ 编辑</button>` : ''}
+      <button class="btn btn-primary" id="pvDownload2">⬇ 下载</button>
+    </div>`, 'modal-lg');
+
+  modalBox.querySelector('[data-close]').onclick = closeModal;
+
+  const dl = () => {
+    const a = document.createElement('a');
+    a.href = '/api/download/' + item.id;
+    a.download = item.name;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  const dlBtn = $('#pvDownload'); if (dlBtn) dlBtn.onclick = dl;
+  const dlBtn2 = $('#pvDownload2'); if (dlBtn2) dlBtn2.onclick = dl;
+
+  const editBtn = $('#pvEdit');
+  if (editBtn) editBtn.onclick = () => window.open('/editor/' + item.id, '_blank');
+
+  if (isText(item)) {
+    try {
+      const d = await api('/api/content/' + item.id);
+      const el = $('#pvText');
+      if (el) el.textContent = d.content || '';
+    } catch (e) {
+      const el = $('#pvText');
+      if (el) el.textContent = '无法加载内容：' + e.message;
+    }
+  }
+}
+
+/* ============================================================
+   上传（并发 3，实时进度，带配额校验）
+   ============================================================ */
+const uploadQueue = [];
+let uploading = false;
+
+const panel  = $('#uploadPanel');
+const listEl = $('#uploadList');
+const sumEl  = $('#uploadSummary');
+
+function showPanel() { panel.classList.add('show'); }
+
+/* ---- 配额预检：拦截明显不合法的上传 ---- */
+function checkQuotaBeforeUpload(files) {
+  // 未分配配额
+  if (state.quota <= 0) {
+    showToast('您的账号未分配上传配额，请联系管理员', 'error');
+    return { ok: false, reason: 'no_quota' };
+  }
+
+  const totalIncoming = Array.from(files).reduce((a, f) => a + (f.size || 0), 0);
+
+  if (totalIncoming > state.remaining) {
+    showToast(
+      `剩余空间不足：需 ${fmtSize(totalIncoming)}，仅剩 ${fmtSize(state.remaining)}`,
+      'error'
+    );
+    return { ok: false, reason: 'quota' };
+  }
+  return { ok: true };
+}
+
+function addFiles(files) {
+  if (!files || !files.length) return;
+
+  const chk = checkQuotaBeforeUpload(files);
+  if (!chk.ok) return;
+
+  const targetFolder = state.folder;
+
+  Array.from(files).forEach(f => {
+    uploadQueue.push({
+      file: f,
+      relPath: f.webkitRelativePath || f.name,
+      folder: targetFolder,
+      progress: 0,
+      status: 'pending',
+      error: null,
+      code: null,
+    });
+  });
+
+  showPanel();
+  renderQueue();
+  startUploading();
+}
+
+function renderQueue() {
+  listEl.innerHTML = uploadQueue.map((t, i) => {
+    const cls = t.status === 'error'
+      ? (t.code === 'QUOTA_EXCEEDED' || t.code === 'NO_QUOTA' ? 'error quota-error' : 'error')
+      : t.status;
+    const pctText = t.status === 'error'
+      ? (t.code === 'QUOTA_EXCEEDED' ? '空间不足'
+         : t.code === 'NO_QUOTA' ? '无配额'
+         : '失败')
+      : t.status === 'done' ? '完成'
+      : Math.round(t.progress * 100) + '%';
+    return `
+    <div class="up-item ${cls}" data-idx="${i}">
+      <div class="up-row">
+        <span class="up-name" title="${esc(t.file.name)}">${esc(t.file.name)}</span>
+        <span class="up-pct">${pctText}</span>
+      </div>
+      <div class="up-bar">
+        <div class="up-fill" style="width:${(t.progress * 100).toFixed(1)}%"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const total = uploadQueue.length;
+  const done  = uploadQueue.filter(t => t.status === 'done').length;
+  const err   = uploadQueue.filter(t => t.status === 'error').length;
+  sumEl.textContent = `${done}/${total}${err ? ' · ' + err + ' 失败' : ''}`;
+}
+
+function updateItemUI(t) {
+  const idx = uploadQueue.indexOf(t);
+  const el = listEl.querySelector(`[data-idx="${idx}"]`);
+  if (!el) { renderQueue(); return; }
+
+  const cls = t.status === 'error'
+    ? (t.code === 'QUOTA_EXCEEDED' || t.code === 'NO_QUOTA' ? 'error quota-error' : 'error')
+    : t.status;
+  el.className = 'up-item ' + cls;
+
+  const pctEl = el.querySelector('.up-pct');
+  const fill  = el.querySelector('.up-fill');
+  if (fill) fill.style.width = (t.progress * 100).toFixed(1) + '%';
+  if (pctEl) {
+    pctEl.textContent = t.status === 'error'
+      ? (t.code === 'QUOTA_EXCEEDED' ? '空间不足'
+         : t.code === 'NO_QUOTA' ? '无配额'
+         : '失败')
+      : t.status === 'done' ? '完成'
+      : Math.round(t.progress * 100) + '%';
+  }
+
+  const total = uploadQueue.length;
+  const done  = uploadQueue.filter(x => x.status === 'done').length;
+  const err   = uploadQueue.filter(x => x.status === 'error').length;
+  sumEl.textContent = `${done}/${total}${err ? ' · ' + err + ' 失败' : ''}`;
+}
+
+function uploadOne(task) {
+  return new Promise(resolve => {
+    const xhr = new XMLHttpRequest();
+    const fd = new FormData();
+    fd.append('file', task.file);
+    fd.append('rel_path', task.relPath);
+    if (task.folder) fd.append('folder', task.folder);
+
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) {
+        task.progress = e.loaded / e.total;
+        updateItemUI(task);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const d = JSON.parse(xhr.responseText);
+          if (d.success) {
+            task.status = 'done';
+            task.progress = 1;
+            task.code = null;
+          } else {
+            task.status = 'error';
+            task.error = d.error || '上传失败';
+            task.code = d.code || null;
+          }
+        } catch (err) {
+          task.status = 'error';
+          task.error = '响应解析失败';
+        }
+      } else {
+        let d = null;
+        try { d = JSON.parse(xhr.responseText); } catch (e) {}
+        task.status = 'error';
+        task.error = (d && d.error) || ('HTTP ' + xhr.status);
+        task.code = (d && d.code) || null;
+      }
+      updateItemUI(task);
+      resolve();
+    };
+
+    xhr.onerror = () => {
+      task.status = 'error';
+      task.error = '网络错误';
+      updateItemUI(task);
+      resolve();
+    };
+
+    xhr.open('POST', '/api/upload', true);
+    xhr.send(fd);
+  });
+}
+
+async function startUploading() {
+  if (uploading) return;
+  uploading = true;
+
+  const CONCURRENCY = 3;
+
+  while (true) {
+    const batch = uploadQueue.filter(t => t.status === 'pending').slice(0, CONCURRENCY);
+    if (!batch.length) break;
+
+    batch.forEach(t => { t.status = 'uploading'; });
+    await Promise.all(batch.map(t => uploadOne(t)));
+
+    // 每批结束后拉一次 stats（保证配额显示即时刷新）
+    loadStats();
+
+    // 若遇到配额类错误，直接终止后续上传，避免无意义的失败刷屏
+    const quotaStopped = uploadQueue.some(t =>
+      t.status === 'error' && (t.code === 'QUOTA_EXCEEDED' || t.code === 'NO_QUOTA'));
+    if (quotaStopped) {
+      uploadQueue.forEach(t => {
+        if (t.status === 'pending') {
+          t.status = 'error';
+          t.code = 'QUOTA_EXCEEDED';
+          t.error = '因配额不足已跳过';
+        }
+      });
+      renderQueue();
+      break;
+    }
+  }
+
+  uploading = false;
+  renderQueue();
+  load();
+  loadStats();
+
+  const failed   = uploadQueue.filter(t => t.status === 'error');
+  const noQuota  = failed.some(t => t.code === 'NO_QUOTA');
+  const exceeded = failed.some(t => t.code === 'QUOTA_EXCEEDED');
+
+  if (failed.length === 0) {
+    showToast('全部上传完成 🎉', 'success');
+  } else if (noQuota) {
+    showToast('账号未分配配额，上传已停止', 'error');
+  } else if (exceeded) {
+    showToast('存储空间已满，上传已停止', 'error');
+  } else {
+    showToast(`${failed.length} 个文件上传失败`, 'error');
+  }
+
+  setTimeout(() => {
+    if (!uploading && uploadQueue.every(t => t.status !== 'uploading')) {
+      panel.classList.remove('show');
+      setTimeout(() => { uploadQueue.length = 0; renderQueue(); }, 300);
+    }
+  }, 3500);
+}
+
+/* ============================================================
+   事件绑定
+   ============================================================ */
+$('#uploadBtn').addEventListener('click', () => {
+  if (!state.canUpload) {
+    if (state.quota <= 0) showToast('您的账号未分配上传配额，请联系管理员', 'error');
+    else showToast('存储空间已满，请先清理文件', 'error');
+    return;
+  }
+  $('#fileInput').click();
+});
+
+$('#fileInput').addEventListener('change', function () {
+  addFiles(this.files);
+  this.value = '';
+});
+
+// 文件夹上传：右键上传按钮
+$('#uploadBtn').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (!state.canUpload) {
+    if (state.quota <= 0) showToast('您的账号未分配上传配额，请联系管理员', 'error');
+    else showToast('存储空间已满，请先清理文件', 'error');
+    return;
+  }
+  $('#folderInput').click();
+});
+$('#folderInput').addEventListener('change', function () {
+  addFiles(this.files);
+  this.value = '';
+});
+
+// 拖拽上传
+let dragDepth = 0;
+document.addEventListener('dragenter', e => {
+  e.preventDefault();
+  dragDepth++;
+  // 无配额时不显示高亮，避免暗示可以上传
+  if (state.canUpload) {
+    document.body.style.outline = '3px dashed var(--primary)';
+    document.body.style.outlineOffset = '-8px';
+  }
+});
+document.addEventListener('dragleave', e => {
+  e.preventDefault();
+  dragDepth--;
+  if (dragDepth <= 0) {
+    dragDepth = 0;
+    document.body.style.outline = '';
+  }
+});
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.style.outline = '';
+
+  if (!state.canUpload) {
+    if (state.quota <= 0) showToast('您的账号未分配上传配额，请联系管理员', 'error');
+    else showToast('存储空间已满，请先清理文件', 'error');
+    return;
+  }
+
+  const dt = e.dataTransfer;
+  if (!dt) return;
+
+  const items = dt.items;
+  const files = [];
+  const entries = [];
+
+  if (items && items.length && items[0].webkitGetAsEntry) {
+    for (const it of items) {
+      const entry = it.webkitGetAsEntry && it.webkitGetAsEntry();
+      if (entry) entries.push(entry);
+    }
+  }
+
+  if (entries.length) {
+    for (const entry of entries) {
+      await walkEntry(entry, '', files);
+    }
+    if (files.length) {
+      addFilesWithPaths(files);
+      return;
+    }
+  }
+
+  if (dt.files && dt.files.length) addFiles(dt.files);
+});
+
+function walkEntry(entry, prefix, out) {
+  return new Promise(resolve => {
+    if (entry.isFile) {
+      entry.file(file => {
+        file._relPath = prefix + file.name;
+        out.push(file);
+        resolve();
+      }, () => resolve());
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const readBatch = () => {
+        reader.readEntries(async results => {
+          if (!results.length) {
+            for (const c of all) await walkEntry(c, prefix + entry.name + '/', out);
+            resolve();
+            return;
+          }
+          all.push(...results);
+          readBatch();
+        }, () => resolve());
+      };
+      readBatch();
+    } else {
+      resolve();
+    }
+  });
+}
+
+function addFilesWithPaths(files) {
+  const chk = checkQuotaBeforeUpload(files);
+  if (!chk.ok) return;
+
+  const targetFolder = state.folder;
+  Array.from(files).forEach(f => {
+    uploadQueue.push({
+      file: f,
+      relPath: f._relPath || f.name,
+      folder: targetFolder,
+      progress: 0,
+      status: 'pending',
+      error: null,
+      code: null,
+    });
+  });
+  showPanel();
+  renderQueue();
+  startUploading();
+}
+
+// 搜索
+let searchTimer = null;
+$('#searchInput').addEventListener('input', function () {
+  const v = this.value.trim();
+  $('#searchClear').hidden = !v;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.search = v;
+    load();
+  }, 280);
+});
+$('#searchClear').addEventListener('click', () => {
+  $('#searchInput').value = '';
+  $('#searchClear').hidden = true;
+  state.search = '';
+  load();
+});
+
+// 侧栏
+$$('.nav-item').forEach(el => {
+  el.addEventListener('click', e => {
+    e.preventDefault();
+    $$('.nav-item').forEach(x => x.classList.remove('active'));
+    el.classList.add('active');
+    state.kind = el.dataset.kind;
+    state.search = '';
+    $('#searchInput').value = '';
+    $('#searchClear').hidden = true;
+    if (state.kind !== 'all') state.folder = null;
+    load(state.kind === 'all' ? null : undefined);
+  });
+});
+
+// 视图切换
+function applyView() {
+  $('#viewBtn').textContent = state.view === 'grid' ? '▦' : '☰';
+}
+$('#viewBtn').addEventListener('click', () => {
+  state.view = state.view === 'grid' ? 'list' : 'grid';
+  localStorage.setItem('cd_view', state.view);
+  applyView();
+  renderFiles();
+});
+
+// 键盘快捷键
+document.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+
+  if (e.key === 'Delete' && state.selected.size) {
+    doDelete(Array.from(state.selected));
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+    e.preventDefault();
+    state.items.forEach(i => state.selected.add(i.id));
+    renderFiles();
+    updateBatchBar();
+  }
+});
+
+/* ============================================================
+   启动
+   ============================================================ */
+applyView();
+
+// 先拉一次配额，再拉文件列表，避免快速点击上传时状态未就绪
+(async function boot() {
+  await loadStats();
+  await load(null);
+})();
+
+})();
+</script>
+{% endblock %}
