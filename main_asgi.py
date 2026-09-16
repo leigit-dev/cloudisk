@@ -2,13 +2,14 @@ import os
 import json
 import uuid
 import shutil
+import asyncio
 import mimetypes
 import threading
 import secrets
 from datetime import datetime
 from functools import wraps
 
-from flask import (Flask, render_template, request, jsonify, redirect,
+from quart import (Quart, render_template, request, jsonify, redirect,
                    url_for, session, send_file, abort, g)
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -24,7 +25,6 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def _load_secret_key():
-    """从 data/secret.key 读取密钥；不存在则随机生成并持久化。"""
     key_file = os.path.join(DATA_DIR, 'secret.key')
 
     env_key = os.environ.get('CLOUDDISK_SECRET_KEY')
@@ -50,7 +50,7 @@ def _load_secret_key():
     return key
 
 
-app = Flask(__name__)
+app = Quart(__name__)
 app.config.update(
     SECRET_KEY=_load_secret_key(),
     MAX_CONTENT_LENGTH=2 * 1024 * 1024 * 1024,
@@ -186,7 +186,6 @@ def get_user_quota(username):
 
 
 def get_user_used(user_id):
-    """某用户当前占用的总字节数（只统计文件）。加锁快照，避免并发迭代错误。"""
     with _db_lock:
         nodes = list(load_db()['nodes'].values())
     return sum(
@@ -424,25 +423,26 @@ def _match_kind(node, kind):
 # 请求钩子 / 装饰器
 # ==========================================================================
 @app.before_request
-def _load_user():
+async def _load_user():
     uid = session.get('uid')
+    # user_get 是同步的，但很快，不用 to_thread
     u = user_get(uid) if uid else None
     g.user = AttrDict(u) if u else None
 
 
 def login_required(fn):
     @wraps(fn)
-    def wrapper(*args, **kwargs):
+    async def wrapper(*args, **kwargs):
         if not g.user:
             if request.path.startswith('/api/'):
                 return jsonify(success=False, error='未登录'), 401
             return redirect(url_for('login', next=request.path))
-        return fn(*args, **kwargs)
+        return await fn(*args, **kwargs)
     return wrapper
 
 
 @app.context_processor
-def _inject():
+async def _inject():
     return {'user': g.user}
 
 
@@ -450,54 +450,56 @@ def _inject():
 # 认证
 # ==========================================================================
 @app.route('/')
-def index():
+async def index():
     return redirect(url_for('files') if g.user else url_for('login'))
 
 
 @app.route('/login', methods=['GET', 'POST'])
-def login():
+async def login():
     if request.method == 'POST':
-        username = (request.form.get('username') or '').strip()
-        password = request.form.get('password') or ''
+        form = await request.form
+        username = (form.get('username') or '').strip()
+        password = form.get('password') or ''
         u = user_get_by_name(username)
         if u and check_password_hash(u['password_hash'], password):
             session['uid'] = u['id']
             nxt = request.args.get('next') or url_for('files')
             return redirect(nxt)
-        return render_template('login.html', error='用户名或密码错误',
-                               mode='login', username=username)
-    return render_template('login.html', mode='login')
+        return await render_template('login.html', error='用户名或密码错误',
+                                     mode='login', username=username)
+    return await render_template('login.html', mode='login')
 
 
 @app.route('/register', methods=['GET', 'POST'])
-def register():
+async def register():
     if request.method == 'POST':
-        username = (request.form.get('username') or '').strip()
-        password = request.form.get('password') or ''
-        confirm  = request.form.get('confirm') or ''
+        form = await request.form
+        username = (form.get('username') or '').strip()
+        password = form.get('password') or ''
+        confirm  = form.get('confirm') or ''
 
-        def fail(msg):
-            return render_template('login.html', error=msg,
-                                   mode='register', username=username)
+        async def fail(msg):
+            return await render_template('login.html', error=msg,
+                                         mode='register', username=username)
 
         if len(username) < 2:
-            return fail('用户名至少 2 个字符')
+            return await fail('用户名至少 2 个字符')
         if len(password) < 4:
-            return fail('密码至少 4 位')
+            return await fail('密码至少 4 位')
         if password != confirm:
-            return fail('两次密码不一致')
+            return await fail('两次密码不一致')
         if user_get_by_name(username):
-            return fail('用户名已存在')
+            return await fail('用户名已存在')
 
         u = user_create(username, password)
         session['uid'] = u['id']
         return redirect(url_for('files'))
 
-    return render_template('login.html', mode='register')
+    return await render_template('login.html', mode='register')
 
 
 @app.route('/logout')
-def logout():
+async def logout():
     session.clear()
     return redirect(url_for('login'))
 
@@ -507,13 +509,13 @@ def logout():
 # ==========================================================================
 @app.route('/files')
 @login_required
-def files():
-    return render_template('index.html')
+async def files():
+    return await render_template('index.html')
 
 
 @app.route('/editor/<int:nid>')
 @login_required
-def editor(nid):
+async def editor(nid):
     n = node_get(nid, g.user['id'])
     if not n or n['is_dir']:
         abort(404)
@@ -521,9 +523,13 @@ def editor(nid):
     p = disk_path(n['user_id'], n['stored'])
     if n['size'] > 4 * 1024 * 1024:
         abort(413)
-    try:
+
+    def _read():
         with open(p, 'r', encoding='utf-8') as fh:
-            content = fh.read()
+            return fh.read()
+
+    try:
+        content = await asyncio.to_thread(_read)
     except (UnicodeDecodeError, OSError):
         abort(415)
 
@@ -538,7 +544,7 @@ def editor(nid):
     except (ValueError, TypeError):
         nv.updated_at = datetime.utcnow()
 
-    return render_template('editor.html', node=nv, content=content)
+    return await render_template('editor.html', node=nv, content=content)
 
 
 # ==========================================================================
@@ -546,7 +552,7 @@ def editor(nid):
 # ==========================================================================
 @app.route('/api/list')
 @login_required
-def api_list():
+async def api_list():
     uid       = g.user['id']
     folder_id = request.args.get('folder', type=int)
     q         = (request.args.get('q') or '').strip()
@@ -593,7 +599,7 @@ def api_list():
 
 @app.route('/api/stats')
 @login_required
-def api_stats():
+async def api_stats():
     uid   = g.user['id']
     used  = get_user_used(uid)
     quota = get_user_quota(g.user['username'])
@@ -624,7 +630,7 @@ def api_stats():
 # ==========================================================================
 @app.route('/api/upload', methods=['POST'])
 @login_required
-def api_upload():
+async def api_upload():
     uid      = g.user['id']
     username = g.user['username']
 
@@ -654,7 +660,8 @@ def api_upload():
             code='QUOTA_EXCEEDED'
         ), 413
 
-    parent_id = request.form.get('folder') or None
+    form = await request.form
+    parent_id = form.get('folder') or None
     if parent_id:
         try:
             parent_id = int(parent_id)
@@ -667,11 +674,12 @@ def api_upload():
         if not parent or not parent['is_dir']:
             return jsonify(success=False, error='目标文件夹不存在'), 404
 
-    f = request.files.get('file')
+    files = await request.files
+    f = files.get('file')
     if not f or not f.filename:
         return jsonify(success=False, error='没有文件'), 400
 
-    rel_path = (request.form.get('rel_path') or f.filename).replace('\\', '/')
+    rel_path = (form.get('rel_path') or f.filename).replace('\\', '/')
     parts = [p for p in rel_path.split('/') if p and p not in ('.', '..')]
     if not parts:
         parts = [f.filename]
@@ -697,7 +705,9 @@ def api_upload():
     user_dir = os.path.join(DATA_DIR, str(uid))
     os.makedirs(user_dir, exist_ok=True)
     dst = os.path.join(user_dir, stored)
-    f.save(dst)
+
+    # Quart 的 f.save() 是 async 的，直接 await
+    await f.save(dst)
     size = os.path.getsize(dst)
 
     used_now = get_user_used(uid)
@@ -728,36 +738,38 @@ def api_upload():
 # ==========================================================================
 @app.route('/api/download/<int:nid>')
 @login_required
-def api_download(nid):
+async def api_download(nid):
     n = node_get(nid, g.user['id'])
     if not n or n['is_dir']:
         abort(404)
     p = disk_path(n['user_id'], n['stored'])
     if not os.path.exists(p):
         abort(404)
-    return send_file(p, as_attachment=True,
-                     download_name=n['name'], conditional=True)
-
+    return await send_file(p,
+                       mimetype=n['mime'] or 'application/octet-stream',
+                       as_attachment=False,
+                       attachment_filename=n['name'],
+                       conditional=True)
 
 @app.route('/api/raw/<int:nid>')
 @login_required
-def api_raw(nid):
+async def api_raw(nid):
     n = node_get(nid, g.user['id'])
     if not n or n['is_dir']:
         abort(404)
     p = disk_path(n['user_id'], n['stored'])
     if not os.path.exists(p):
         abort(404)
-    return send_file(p,
-                     mimetype=n['mime'] or 'application/octet-stream',
-                     as_attachment=False,
-                     download_name=n['name'],
-                     conditional=True)
+    return await send_file(p,
+                           mimetype=n['mime'] or 'application/octet-stream',
+                           as_attachment=False,
+                           attachment_filename=n['name'],
+                           conditional=True)
 
 
 @app.route('/api/content/<int:nid>')
 @login_required
-def api_content(nid):
+async def api_content(nid):
     n = node_get(nid, g.user['id'])
     if not n:
         return jsonify(success=False, error='文件不存在'), 404
@@ -767,9 +779,13 @@ def api_content(nid):
         return jsonify(success=False, error='文件超过 4MB，无法在线编辑'), 400
 
     p = disk_path(n['user_id'], n['stored'])
-    try:
+
+    def _read():
         with open(p, 'r', encoding='utf-8') as fh:
-            content = fh.read()
+            return fh.read()
+
+    try:
+        content = await asyncio.to_thread(_read)
     except UnicodeDecodeError:
         return jsonify(success=False, error='二进制文件无法编辑'), 400
     except OSError:
@@ -780,21 +796,25 @@ def api_content(nid):
 
 @app.route('/api/save/<int:nid>', methods=['POST'])
 @login_required
-def api_save(nid):
+async def api_save(nid):
     n = node_get(nid, g.user['id'])
     if not n:
         return jsonify(success=False, error='文件不存在'), 404
     if n['is_dir']:
         abort(400)
 
-    data    = request.get_json(silent=True) or {}
+    data = await request.get_json(silent=True) or {}
     content = data.get('content', '')
     p = disk_path(n['user_id'], n['stored'])
 
     old_size = n['size']
-    with open(p, 'w', encoding='utf-8', newline='') as fh:
-        fh.write(content)
-    new_size = os.path.getsize(p)
+
+    def _write():
+        with open(p, 'w', encoding='utf-8', newline='') as fh:
+            fh.write(content)
+        return os.path.getsize(p)
+
+    new_size = await asyncio.to_thread(_write)
 
     uid   = g.user['id']
     quota = get_user_quota(g.user['username'])
@@ -821,9 +841,9 @@ def api_save(nid):
 # ==========================================================================
 @app.route('/api/mkdir', methods=['POST'])
 @login_required
-def api_mkdir():
+async def api_mkdir():
     uid  = g.user['id']
-    data = request.get_json(silent=True) or {}
+    data = await request.get_json(silent=True) or {}
 
     name = (data.get('name') or '').strip().replace('/', '').replace('\\', '')
     if not name:
@@ -843,9 +863,9 @@ def api_mkdir():
 
 @app.route('/api/rename', methods=['POST'])
 @login_required
-def api_rename():
+async def api_rename():
     uid  = g.user['id']
-    data = request.get_json(silent=True) or {}
+    data = await request.get_json(silent=True) or {}
 
     name = (data.get('name') or '').strip().replace('/', '').replace('\\', '')
     if not name:
@@ -866,9 +886,9 @@ def api_rename():
 
 @app.route('/api/delete', methods=['POST'])
 @login_required
-def api_delete():
+async def api_delete():
     uid  = g.user['id']
-    data = request.get_json(silent=True) or {}
+    data = await request.get_json(silent=True) or {}
 
     count = 0
     for nid in (data.get('ids') or []):
@@ -882,9 +902,9 @@ def api_delete():
 
 @app.route('/api/move', methods=['POST'])
 @login_required
-def api_move():
+async def api_move():
     uid  = g.user['id']
-    data = request.get_json(silent=True) or {}
+    data = await request.get_json(silent=True) or {}
 
     target_id = data.get('target') or None
     target = None
@@ -916,10 +936,10 @@ def api_move():
 
 @app.route('/api/copy', methods=['POST'])
 @login_required
-def api_copy():
+async def api_copy():
     uid      = g.user['id']
     username = g.user['username']
-    data     = request.get_json(silent=True) or {}
+    data     = await request.get_json(silent=True) or {}
 
     quota = get_user_quota(username)
     if quota <= 0:
@@ -955,7 +975,8 @@ def api_copy():
         n = node_get(nid, uid)
         if not n:
             continue
-        copy_recursive(n, tpid, uid)
+        # 复制是磁盘 IO，放到线程池
+        await asyncio.to_thread(copy_recursive, n, tpid, uid)
         count += 1
 
     return jsonify(success=True, count=count)
@@ -966,9 +987,9 @@ def api_copy():
 # ==========================================================================
 @app.route('/api/collect', methods=['POST'])
 @login_required
-def api_collect():
+async def api_collect():
     uid  = g.user['id']
-    data = request.get_json(silent=True) or {}
+    data = await request.get_json(silent=True) or {}
     out  = []
 
     def walk(n, prefix):
@@ -1001,7 +1022,7 @@ def api_collect():
 # ==========================================================================
 @app.route('/api/tree')
 @login_required
-def api_tree():
+async def api_tree():
     uid = g.user['id']
     with _db_lock:
         all_nodes = list(load_db()['nodes'].values())
@@ -1026,4 +1047,5 @@ def api_tree():
 if __name__ == '__main__':
     load_db()
     load_quotas()
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    # 开发模式（不推荐生产）
+    app.run(host='0.0.0.0', port=5000, debug=False)
