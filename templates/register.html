@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ '完成注册' if mode == 'complete' else '注册' }} · ClouDisk{% endblock %}
+
+{% block body %}
+<div class="auth-wrap">
+  <div class="auth-card glass">
+    <div class="auth-logo">☁</div>
+    <h1 class="auth-title">ClouDisk</h1>
+
+    {% if mode == 'complete' %}
+      <p class="auth-sub">首次登录，请设置你的密码</p>
+      {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+      <form method="post" class="auth-form">
+        <div class="field">
+          <label>邮箱（已验证，不可修改）</label>
+          <input type="email" value="{{ locked_email }}" readonly
+                 style="background:#f5f5f5; cursor:not-allowed;">
+        </div>
+        <div class="field">
+          <label>设置密码</label>
+          <input type="password" name="password" placeholder="至少 8 位"
+                 autocomplete="new-password" required>
+        </div>
+        <div class="field">
+          <label>确认密码</label>
+          <input type="password" name="confirm" placeholder="再次输入密码"
+                 autocomplete="new-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">完成注册</button>
+      </form>
+
+    {% else %}
+      <p class="auth-sub">创建一个新账号</p>
+      {% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+      <form method="post" class="auth-form">
+        <div class="field">
+          <label>用户名</label>
+          <input type="text" name="username" required>
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input type="password" name="password" placeholder="至少 8 位" required>
+        </div>
+        <div class="field">
+          <label>确认密码</label>
+          <input type="password" name="confirm" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">注册并登录</button>
+      </form>
+    {% endif %}
+
+    <div class="auth-switch">
+      <a href="{{ url_for('login') }}">返回登录</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,3 +1,7 @@
+# ==========================================================================
+# main.py — ClouDisk
+# 支持：本地用户 / Cloudflare Access JWT 自动登录（可选）
+# ==========================================================================
 import os
 import json
 import uuid
@@ -5,6 +9,7 @@ import shutil
 import mimetypes
 import threading
 import secrets
+import time
 from datetime import datetime
 from functools import wraps
 
@@ -13,9 +18,20 @@ from flask import (Flask, render_template, request, jsonify, redirect,
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
-# --------------------------------------------------------------------------
+# ---------- 可选依赖：PyJWT + cryptography ----------
+try:
+    import jwt
+    from jwt import PyJWKClient
+    _JWT_IMPORT_OK = True
+except ImportError:
+    jwt = None
+    PyJWKClient = None
+    _JWT_IMPORT_OK = False
+
+
+# ==========================================================================
 # 基础配置
-# --------------------------------------------------------------------------
+# ==========================================================================
 BASE_DIR   = os.path.abspath(os.path.dirname(__file__))
 DATA_DIR   = os.path.join(BASE_DIR, 'data')
 DB_FILE    = os.path.join(DATA_DIR, 'db.json')
@@ -55,7 +71,34 @@ app.config.update(
     SECRET_KEY=_load_secret_key(),
     MAX_CONTENT_LENGTH=2 * 1024 * 1024 * 1024,
     JSON_AS_ASCII=False,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
 )
+
+
+# ==========================================================================
+# Cloudflare Access JWT 配置（可选）
+# ==========================================================================
+CF_ACCESS_TEAM_DOMAIN = os.environ.get('CF_ACCESS_TEAM_DOMAIN', '').strip()
+CF_ACCESS_AUD = os.environ.get('CF_ACCESS_AUD', '').strip()
+
+JWT_AVAILABLE = (
+    _JWT_IMPORT_OK
+    and bool(CF_ACCESS_TEAM_DOMAIN)
+    and bool(CF_ACCESS_AUD)
+)
+
+_jwks_client = None
+if JWT_AVAILABLE:
+    try:
+        _jwks_client = PyJWKClient(
+            f'https://{CF_ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs',
+            cache_keys=True,
+            lifespan=3600,
+        )
+    except Exception:
+        _jwks_client = None
+        JWT_AVAILABLE = False
 
 
 # ==========================================================================
@@ -186,7 +229,6 @@ def get_user_quota(username):
 
 
 def get_user_used(user_id):
-    """某用户当前占用的总字节数（只统计文件）。加锁快照，避免并发迭代错误。"""
     with _db_lock:
         nodes = list(load_db()['nodes'].values())
     return sum(
@@ -421,13 +463,113 @@ def _match_kind(node, kind):
 
 
 # ==========================================================================
+# 登录限速
+# ==========================================================================
+_login_attempts = {}
+_login_lock = threading.Lock()
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 300
+
+
+def _client_ip():
+    return (request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown')
+            .split(',')[0].strip())
+
+
+def _check_login_rate(ip):
+    """只读检查，不计数。返回 True 表示允许尝试。"""
+    now = time.time()
+    with _login_lock:
+        rec = _login_attempts.get(ip)
+        if not rec or now - rec['first'] > LOGIN_WINDOW_SECONDS:
+            return True
+        return rec['count'] < LOGIN_MAX_ATTEMPTS
+
+
+def _record_login_failure(ip):
+    now = time.time()
+    with _login_lock:
+        rec = _login_attempts.get(ip)
+        if not rec or now - rec['first'] > LOGIN_WINDOW_SECONDS:
+            _login_attempts[ip] = {'count': 1, 'first': now}
+        else:
+            rec['count'] += 1
+
+
+def _reset_login_rate(ip):
+    with _login_lock:
+        _login_attempts.pop(ip, None)
+
+
+# ==========================================================================
+# 全局上传配额锁
+# ==========================================================================
+upload_quota_lock = threading.Lock()
+
+
+# ==========================================================================
+# Cloudflare Access JWT 工具
+# ==========================================================================
+def _get_cf_jwt():
+    token = request.headers.get('Cf-Access-Jwt-Assertion')
+    if token:
+        return token
+    return request.cookies.get('CF_Authorization')
+
+
+def verify_cf_jwt(token):
+    if not JWT_AVAILABLE or not token or _jwks_client is None:
+        return None
+    try:
+        signing_key = _jwks_client.get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=['RS256'],
+            audience=CF_ACCESS_AUD,
+            issuer=f'https://{CF_ACCESS_TEAM_DOMAIN}',
+            options={'verify_exp': True},
+        )
+        return payload
+    except Exception:
+        return None
+
+
+# ==========================================================================
 # 请求钩子 / 装饰器
 # ==========================================================================
 @app.before_request
 def _load_user():
+    # 1) 已有 session，直接加载
     uid = session.get('uid')
-    u = user_get(uid) if uid else None
-    g.user = AttrDict(u) if u else None
+    if uid:
+        u = user_get(uid)
+        if u:
+            g.user = AttrDict(u)
+            g.pending_email = None
+            return
+        session.clear()
+
+    # 2) 尝试从 Cloudflare Access JWT 自动登录
+    g.pending_email = None
+    if JWT_AVAILABLE:
+        token = _get_cf_jwt()
+        if token:
+            payload = verify_cf_jwt(token)
+            if payload:
+                email = (payload.get('email') or '').strip().lower()
+                if email:
+                    u = user_get_by_name(email)
+                    if u:
+                        session.clear()
+                        session['uid'] = u['id']
+                        g.user = AttrDict(u)
+                        return
+                    g.pending_email = email
+                    g.user = None
+                    return
+
+    g.user = None
 
 
 def login_required(fn):
@@ -457,21 +599,73 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        ip = _client_ip()
+
+        if not _check_login_rate(ip):
+            return render_template(
+                'login.html',
+                error='尝试次数过多，请 5 分钟后再试',
+                mode='login',
+                username=(request.form.get('username') or '').strip()
+            )
+
         username = (request.form.get('username') or '').strip()
         password = request.form.get('password') or ''
         u = user_get_by_name(username)
+
         if u and check_password_hash(u['password_hash'], password):
+            session.clear()
             session['uid'] = u['id']
+            _reset_login_rate(ip)
             nxt = request.args.get('next') or url_for('files')
             return redirect(nxt)
+
+        _record_login_failure(ip)
         return render_template('login.html', error='用户名或密码错误',
                                mode='login', username=username)
+
     return render_template('login.html', mode='login')
 
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    # 尝试从 JWT 取已认证邮箱
+    jwt_email = None
+    if JWT_AVAILABLE:
+        token = _get_cf_jwt()
+        if token:
+            payload = verify_cf_jwt(token)
+            if payload:
+                jwt_email = (payload.get('email') or '').strip().lower() or None
+
+    # ---------- POST ----------
     if request.method == 'POST':
+        # A. 有 JWT 邮箱 → "完成注册" 流程
+        if jwt_email:
+            password = request.form.get('password') or ''
+            confirm  = request.form.get('confirm') or ''
+
+            def fail(msg):
+                return render_template('register.html', error=msg,
+                                       locked_email=jwt_email, mode='complete')
+
+            if len(password) < 8:
+                return fail('密码至少 8 位')
+            if password != confirm:
+                return fail('两次密码不一致')
+
+            existing = user_get_by_name(jwt_email)
+            if existing:
+                session.clear()
+                session['uid'] = existing['id']
+                return redirect(url_for('files'))
+
+            u = user_create(jwt_email, password)
+            session.clear()
+            session['uid'] = u['id']
+            return redirect(url_for('files'))
+
+        # B. 无 JWT → 传统注册（回退）
         username = (request.form.get('username') or '').strip()
         password = request.form.get('password') or ''
         confirm  = request.form.get('confirm') or ''
@@ -482,16 +676,27 @@ def register():
 
         if len(username) < 2:
             return fail('用户名至少 2 个字符')
-        if len(password) < 4:
-            return fail('密码至少 4 位')
+        if len(password) < 8:
+            return fail('密码至少 8 位')
         if password != confirm:
             return fail('两次密码不一致')
         if user_get_by_name(username):
             return fail('用户名已存在')
 
         u = user_create(username, password)
+        session.clear()
         session['uid'] = u['id']
         return redirect(url_for('files'))
+
+    # ---------- GET ----------
+    if jwt_email:
+        existing = user_get_by_name(jwt_email)
+        if existing:
+            session.clear()
+            session['uid'] = existing['id']
+            return redirect(url_for('files'))
+        return render_template('register.html',
+                               locked_email=jwt_email, mode='complete')
 
     return render_template('login.html', mode='register')
 
@@ -622,6 +827,9 @@ def api_stats():
 # ==========================================================================
 # API：上传
 # ==========================================================================
+MAX_SINGLE_FILE = 95 * 1024 * 1024  # 受 Cloudflare Tunnel 免费版 100MB 限制
+
+
 @app.route('/api/upload', methods=['POST'])
 @login_required
 def api_upload():
@@ -636,89 +844,99 @@ def api_upload():
             code='NO_QUOTA'
         ), 403
 
-    used      = get_user_used(uid)
-    remaining = max(0, quota - used)
-    if remaining <= 0:
-        return jsonify(
-            success=False,
-            error=f'存储空间已满（已用 {fmt_size(used)} / 配额 {fmt_size(quota)}）',
-            code='QUOTA_EXCEEDED'
-        ), 413
-
     cl = request.content_length or 0
-    if cl > remaining:
+    if cl > MAX_SINGLE_FILE:
         return jsonify(
             success=False,
-            error=(f'存储空间不足。剩余 {fmt_size(remaining)}，'
-                   f'本文件约 {fmt_size(cl)}。'),
-            code='QUOTA_EXCEEDED'
+            error=f'单文件不能超过 {fmt_size(MAX_SINGLE_FILE)}',
+            code='FILE_TOO_LARGE'
         ), 413
 
-    parent_id = request.form.get('folder') or None
-    if parent_id:
-        try:
-            parent_id = int(parent_id)
-        except ValueError:
-            parent_id = None
+    with upload_quota_lock:
+        used      = get_user_used(uid)
+        remaining = max(0, quota - used)
+        if remaining <= 0:
+            return jsonify(
+                success=False,
+                error=f'存储空间已满（已用 {fmt_size(used)} / 配额 {fmt_size(quota)}）',
+                code='QUOTA_EXCEEDED'
+            ), 413
 
-    parent = None
-    if parent_id:
-        parent = node_get(parent_id, uid)
-        if not parent or not parent['is_dir']:
-            return jsonify(success=False, error='目标文件夹不存在'), 404
+        if cl > remaining:
+            return jsonify(
+                success=False,
+                error=(f'存储空间不足。剩余 {fmt_size(remaining)}，'
+                       f'本文件约 {fmt_size(cl)}。'),
+                code='QUOTA_EXCEEDED'
+            ), 413
 
-    f = request.files.get('file')
-    if not f or not f.filename:
-        return jsonify(success=False, error='没有文件'), 400
+        parent_id = request.form.get('folder') or None
+        if parent_id:
+            try:
+                parent_id = int(parent_id)
+            except ValueError:
+                parent_id = None
 
-    rel_path = (request.form.get('rel_path') or f.filename).replace('\\', '/')
-    parts = [p for p in rel_path.split('/') if p and p not in ('.', '..')]
-    if not parts:
-        parts = [f.filename]
-    filename = parts[-1]
-    subdirs  = parts[:-1]
+        parent = None
+        if parent_id:
+            parent = node_get(parent_id, uid)
+            if not parent or not parent['is_dir']:
+                return jsonify(success=False, error='目标文件夹不存在'), 404
 
-    cur_pid = parent['id'] if parent else None
-    for d in subdirs:
-        existing = None
-        for c in node_children(uid, cur_pid):
-            if c['is_dir'] and c['name'] == d:
-                existing = c
-                break
-        if existing:
-            cur_pid = existing['id']
-        else:
-            nn = node_create(uid, cur_pid, d, is_dir=True)
-            cur_pid = nn['id']
+        f = request.files.get('file')
+        if not f or not f.filename:
+            return jsonify(success=False, error='没有文件'), 400
 
-    final_name = unique_name(uid, cur_pid, filename)
-    stored     = uuid.uuid4().hex
+        rel_path = (request.form.get('rel_path') or f.filename).replace('\\', '/')
+        parts = [p for p in rel_path.split('/') if p and p not in ('.', '..')]
+        if not parts:
+            parts = [f.filename]
+        filename = parts[-1]
+        subdirs  = parts[:-1]
 
-    user_dir = os.path.join(DATA_DIR, str(uid))
-    os.makedirs(user_dir, exist_ok=True)
-    dst = os.path.join(user_dir, stored)
-    f.save(dst)
-    size = os.path.getsize(dst)
+        cur_pid = parent['id'] if parent else None
+        for d in subdirs:
+            existing = None
+            for c in node_children(uid, cur_pid):
+                if c['is_dir'] and c['name'] == d:
+                    existing = c
+                    break
+            if existing:
+                cur_pid = existing['id']
+            else:
+                nn = node_create(uid, cur_pid, d, is_dir=True)
+                cur_pid = nn['id']
 
-    used_now = get_user_used(uid)
-    if used_now + size > quota:
-        try:
-            os.remove(dst)
-        except OSError:
-            pass
-        return jsonify(
-            success=False,
-            error=(f'存储空间不足。已用 {fmt_size(used_now)} / '
-                   f'配额 {fmt_size(quota)}，无法写入该文件（{fmt_size(size)}）。'),
-            code='QUOTA_EXCEEDED'
-        ), 413
+        final_name = unique_name(uid, cur_pid, filename)
+        stored     = uuid.uuid4().hex
 
-    mime = (f.mimetype
-            or mimetypes.guess_type(final_name)[0]
-            or 'application/octet-stream')
+        user_dir = os.path.join(DATA_DIR, str(uid))
+        os.makedirs(user_dir, exist_ok=True)
+        dst = os.path.join(user_dir, stored)
+        f.save(dst)
+        size = os.path.getsize(dst)
 
-    n = node_create(uid, cur_pid, final_name, is_dir=False,
-                    size=size, mime=mime, stored=stored)
+        used_now = get_user_used(uid)
+        if used_now + size > quota:
+            try:
+                os.remove(dst)
+            except OSError:
+                pass
+            return jsonify(
+                success=False,
+                error=(f'存储空间不足。已用 {fmt_size(used_now)} / '
+                       f'配额 {fmt_size(quota)}，无法写入该文件（{fmt_size(size)}）。'),
+                code='QUOTA_EXCEEDED'
+            ), 413
+
+        # 服务端重新判断 MIME，不信任客户端的 f.mimetype
+        safe_mime = mimetypes.guess_type(final_name)[0] or 'application/octet-stream'
+        if safe_mime in ('text/html', 'image/svg+xml',
+                         'application/xhtml+xml', 'text/xml'):
+            safe_mime = 'application/octet-stream'
+
+        n = node_create(uid, cur_pid, final_name, is_dir=False,
+                        size=size, mime=safe_mime, stored=stored)
 
     return jsonify(success=True, item=node_dict(n))
 
@@ -748,11 +966,20 @@ def api_raw(nid):
     p = disk_path(n['user_id'], n['stored'])
     if not os.path.exists(p):
         abort(404)
-    return send_file(p,
-                     mimetype=n['mime'] or 'application/octet-stream',
+
+    # 服务端根据文件名重新判断 MIME，二次防御
+    safe_mime = mimetypes.guess_type(n['name'])[0] or 'application/octet-stream'
+    if safe_mime in ('text/html', 'image/svg+xml',
+                     'application/xhtml+xml', 'text/xml'):
+        safe_mime = 'application/octet-stream'
+
+    resp = send_file(p, mimetype=safe_mime,
                      as_attachment=False,
                      download_name=n['name'],
                      conditional=True)
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    resp.headers['Content-Security-Policy'] = "default-src 'none'; img-src 'self'"
+    return resp
 
 
 @app.route('/api/content/<int:nid>')
@@ -1026,4 +1253,4 @@ def api_tree():
 if __name__ == '__main__':
     load_db()
     load_quotas()
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    app.run(host='0.0.0.0', port=51324, debug=False, threaded=True)
