@@ -96,10 +96,13 @@ if JWT_AVAILABLE:
             cache_keys=True,
             lifespan=3600,
         )
+        print("JWT ready")
     except Exception:
         _jwks_client = None
         JWT_AVAILABLE = False
-
+        print("JWT service failed")
+else:
+    print("JWT not available")
 
 # ==========================================================================
 # JSON 数据库层
@@ -540,7 +543,13 @@ def verify_cf_jwt(token):
 # ==========================================================================
 @app.before_request
 def _load_user():
-    # 1) 已有 session，直接加载
+    # ===== 临时调试，问题解决后删掉 =====
+    # print("=" * 60)
+    # print(f"PATH: {request.path}")
+    # print(f"HEADER JWT: {'有' if request.headers.get('Cf-Access-Jwt-Assertion') else '无'}")
+    # print(f"HEADER EMAIL: {request.headers.get('Cf-Access-Authenticated-User-Email') or '无'}")
+    # print(f"COOKIE: {'有' if request.cookies.get('CF_Authorization') else '无'}")
+    # # 1) 已有 session，直接加载
     uid = session.get('uid')
     if uid:
         u = user_get(uid)
@@ -549,6 +558,19 @@ def _load_user():
             g.pending_email = None
             return
         session.clear()
+
+    g.pending_email = None
+    verified_email = (request.headers.get('Cf-Access-Authenticated-User-Email') or '').strip().lower()
+    if verified_email:
+        u = user_get_by_name(verified_email)
+        if u:
+            session.clear()
+            session['uid'] = u['id']
+            g.user = AttrDict(u)
+            return
+        g.pending_email = verified_email
+        g.user = None
+        return
 
     # 2) 尝试从 Cloudflare Access JWT 自动登录
     g.pending_email = None
@@ -623,7 +645,9 @@ def login():
         _record_login_failure(ip)
         return render_template('login.html', error='用户名或密码错误',
                                mode='login', username=username)
-
+    verified = (request.headers.get('Cf-Access-Authenticated-User-Email') or '').strip().lower()
+    if verified:
+        return redirect("/")
     return render_template('login.html', mode='login')
 
 
@@ -631,7 +655,10 @@ def login():
 def register():
     # 尝试从 JWT 取已认证邮箱
     jwt_email = None
-    if JWT_AVAILABLE:
+    verified = (request.headers.get('Cf-Access-Authenticated-User-Email') or '').strip().lower()
+    if verified:
+        jwt_email = verified
+    elif JWT_AVAILABLE:
         token = _get_cf_jwt()
         if token:
             payload = verify_cf_jwt(token)
@@ -1253,4 +1280,4 @@ def api_tree():
 if __name__ == '__main__':
     load_db()
     load_quotas()
-    app.run(host='0.0.0.0', port=51324, debug=False, threaded=True)
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
