@@ -543,13 +543,7 @@ def verify_cf_jwt(token):
 # ==========================================================================
 @app.before_request
 def _load_user():
-    # ===== 临时调试，问题解决后删掉 =====
-    # print("=" * 60)
-    # print(f"PATH: {request.path}")
-    # print(f"HEADER JWT: {'有' if request.headers.get('Cf-Access-Jwt-Assertion') else '无'}")
-    # print(f"HEADER EMAIL: {request.headers.get('Cf-Access-Authenticated-User-Email') or '无'}")
-    # print(f"COOKIE: {'有' if request.cookies.get('CF_Authorization') else '无'}")
-    # # 1) 已有 session，直接加载
+    # 1) session 有效
     uid = session.get('uid')
     if uid:
         u = user_get(uid)
@@ -559,21 +553,10 @@ def _load_user():
             return
         session.clear()
 
+    g.user = None
     g.pending_email = None
-    verified_email = (request.headers.get('Cf-Access-Authenticated-User-Email') or '').strip().lower()
-    if verified_email:
-        u = user_get_by_name(verified_email)
-        if u:
-            session.clear()
-            session['uid'] = u['id']
-            g.user = AttrDict(u)
-            return
-        g.pending_email = verified_email
-        g.user = None
-        return
 
-    # 2) 尝试从 Cloudflare Access JWT 自动登录
-    g.pending_email = None
+    # 2) 从 CF Access JWT 自动登录（唯一可信来源）
     if JWT_AVAILABLE:
         token = _get_cf_jwt()
         if token:
@@ -588,10 +571,7 @@ def _load_user():
                         g.user = AttrDict(u)
                         return
                     g.pending_email = email
-                    g.user = None
-                    return
-
-    g.user = None
+                print(f"[INFO] User [{email}] login via JWT")
 
 
 def login_required(fn):
@@ -639,31 +619,34 @@ def login():
             session.clear()
             session['uid'] = u['id']
             _reset_login_rate(ip)
+            print(f"[INFO] User [{u["id"]}] login via PWD")
             nxt = request.args.get('next') or url_for('files')
             return redirect(nxt)
 
         _record_login_failure(ip)
         return render_template('login.html', error='用户名或密码错误',
                                mode='login', username=username)
-    verified = (request.headers.get('Cf-Access-Authenticated-User-Email') or '').strip().lower()
-    if verified:
-        return redirect("/")
+
+    # ---------- GET ----------
+    # 已登录 → 直接进文件页
+    if g.user:
+        return redirect(url_for('files'))
+
+    # Cloudflare Access 已认证但本地未注册 → 去完成注册
+    if g.pending_email:
+        return redirect(url_for('register'))
+
     return render_template('login.html', mode='login')
 
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    # 尝试从 JWT 取已认证邮箱
-    jwt_email = None
-    verified = (request.headers.get('Cf-Access-Authenticated-User-Email') or '').strip().lower()
-    if verified:
-        jwt_email = verified
-    elif JWT_AVAILABLE:
-        token = _get_cf_jwt()
-        if token:
-            payload = verify_cf_jwt(token)
-            if payload:
-                jwt_email = (payload.get('email') or '').strip().lower() or None
+    # 已登录 → 直接回文件页
+    if g.user:
+        return redirect(url_for('files'))
+
+    # CF Access 已认证但未注册的邮箱（由 _load_user 设置）
+    jwt_email = g.pending_email
 
     # ---------- POST ----------
     if request.method == 'POST':
@@ -690,6 +673,7 @@ def register():
             u = user_create(jwt_email, password)
             session.clear()
             session['uid'] = u['id']
+            print(f"[INFO] User [{u["id"]}] register via JWT method")
             return redirect(url_for('files'))
 
         # B. 无 JWT → 传统注册（回退）
@@ -713,6 +697,7 @@ def register():
         u = user_create(username, password)
         session.clear()
         session['uid'] = u['id']
+        print(f"[INFO] User [{u["id"]}] register via traditional method")
         return redirect(url_for('files'))
 
     # ---------- GET ----------
@@ -854,7 +839,7 @@ def api_stats():
 # ==========================================================================
 # API：上传
 # ==========================================================================
-MAX_SINGLE_FILE = 200 * 1024 * 1024  # 受 Cloudflare Tunnel 免费版 100MB 限制
+MAX_SINGLE_FILE = os.environ.get("CLOUDDISK_MAX_FILE",2* 1024 * 1024 * 1024)  # 受 Cloudflare Tunnel 免费版 100MB 限制
 
 
 @app.route('/api/upload', methods=['POST'])
