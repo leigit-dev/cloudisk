@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% from "icon_svg.html" import icon %}
 {% block title %}{{ '注册' if mode == 'register' else '登录' }} · ClouDisk{% endblock %}
 
 {% block body %}
 <div class="auth-wrap">
   <div class="auth-card glass">
-    <div class="auth-logo">☁</div>
+    <div class="auth-logo">{{ icon('cloud') }}</div>
     <h1 class="auth-title">ClouDisk</h1>
     <p class="auth-sub">{{ '创建一个新账号' if mode == 'register' else '登录以继续' }}</p>
 

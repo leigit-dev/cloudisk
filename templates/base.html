@@ -1,6 +1,7 @@
 <!-- ============================================================
      templates/base.html
      ============================================================ -->
+{% from "icon_svg.html" import icon_js %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -18,6 +19,7 @@
     }
   })();
 </script>
+<script>{{ icon_js()|safe }}</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 {% block head %}{% endblock %}
 </head>

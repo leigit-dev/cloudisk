@@ -854,7 +854,7 @@ def api_stats():
 # ==========================================================================
 # API：上传
 # ==========================================================================
-MAX_SINGLE_FILE = 95 * 1024 * 1024  # 受 Cloudflare Tunnel 免费版 100MB 限制
+MAX_SINGLE_FILE = 200 * 1024 * 1024  # 受 Cloudflare Tunnel 免费版 100MB 限制
 
 
 @app.route('/api/upload', methods=['POST'])

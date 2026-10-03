@@ -5,9 +5,14 @@
 /* ---------- 主题 ---------- */
 (function initTheme() {
   const btn = document.getElementById('themeBtn');
+
   const sync = () => {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    if (btn) btn.textContent = dark ? '☀️' : '🌙';
+    if (!btn) return;
+    // 用 SVG 图标代替 emoji
+    if (window.CD_ICON) {
+      btn.innerHTML = dark ? CD_ICON.sun : CD_ICON.moon;
+    }
   };
   sync();
 

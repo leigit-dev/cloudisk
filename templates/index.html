@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "icon_svg.html" import icon %}
 {% block title %}ClouDisk · 我的文件{% endblock %}
 
 {% block head %}
@@ -23,18 +24,18 @@
 
   <header class="topbar glass">
     <div class="brand">
-      <div class="brand-logo">☁</div>
+      <div class="brand-logo">{{ icon('cloud') }}</div>
       <span class="brand-name">ClouDisk</span>
     </div>
 
     <div class="search-box">
-      <span class="search-icon">🔍</span>
+      <span class="search-icon">{{ icon('search') }}</span>
       <input id="searchInput" type="text" placeholder="搜索文件…" autocomplete="off">
-      <button class="search-clear" id="searchClear" hidden>✕</button>
+      <button class="search-clear" id="searchClear" hidden>{{ icon('close') }}</button>
     </div>
 
     <div class="topbar-actions">
-      <button class="icon-btn" id="themeBtn" title="切换主题">🌙</button>
+      <button class="icon-btn" id="themeBtn" title="切换主题">{{ icon('moon') }}</button>
       <div class="user-chip">
         <span class="uname">{{ user.username }}</span>
         <a href="{{ url_for('logout') }}" class="logout-link">退出</a>
@@ -45,11 +46,11 @@
   <div class="layout">
 
     <aside class="sidebar glass">
-      <a class="nav-item active" data-kind="all"><span class="emoji">📁</span>全部文件</a>
-      <a class="nav-item" data-kind="image"><span class="emoji">🖼️</span>图片</a>
-      <a class="nav-item" data-kind="video"><span class="emoji">🎬</span>视频</a>
-      <a class="nav-item" data-kind="audio"><span class="emoji">🎵</span>音频</a>
-      <a class="nav-item" data-kind="doc"><span class="emoji">📄</span>文档</a>
+      <a class="nav-item active" data-kind="all"><span class="emoji">{{ icon('folder') }}</span>全部文件</a>
+      <a class="nav-item" data-kind="image"><span class="emoji">{{ icon('image') }}</span>图片</a>
+      <a class="nav-item" data-kind="video"><span class="emoji">{{ icon('video') }}</span>视频</a>
+      <a class="nav-item" data-kind="audio"><span class="emoji">{{ icon('audio') }}</span>音频</a>
+      <a class="nav-item" data-kind="doc"><span class="emoji">{{ icon('doc') }}</span>文档</a>
 
       <div class="storage-box">
         <div class="storage-label" id="storageLabel">已用空间</div>
@@ -65,10 +66,10 @@
       <div class="toolbar glass">
         <div class="breadcrumb" id="breadcrumb"></div>
         <div class="toolbar-right">
-          <button class="btn btn-primary btn-upload" id="uploadBtn">⬆ 上传文件</button>
-          <button class="btn btn-upload" id="uploadFolderBtn" title="选择整个文件夹上传，自动保留目录结构">📁 上传文件夹</button>
-          <button class="btn" id="mkdirBtn">＋ 新建文件夹</button>
-          <button class="icon-btn" id="viewBtn" title="切换视图">▦</button>
+          <button class="btn btn-primary btn-upload" id="uploadBtn">{{ icon('upload') }} 上传文件</button>
+          <button class="btn btn-upload" id="uploadFolderBtn" title="选择整个文件夹上传，自动保留目录结构">{{ icon('folder') }} 上传文件夹</button>
+          <button class="btn" id="mkdirBtn">{{ icon('plus') }} 新建文件夹</button>
+          <button class="icon-btn" id="viewBtn" title="切换视图">{{ icon('grid') }}</button>
         </div>
       </div>
 
@@ -83,17 +84,17 @@
 <div class="batch-bar glass" id="batchBar">
   <span class="batch-count">已选 <b id="batchCount">0</b> 项</span>
   <div class="batch-actions">
-    <button class="btn btn-sm" data-act="download">⬇ 下载</button>
-    <button class="btn btn-sm" data-act="move">↔ 移动</button>
-    <button class="btn btn-sm" data-act="copy">⧉ 复制</button>
-    <button class="btn btn-sm btn-danger" data-act="delete">🗑 删除</button>
+    <button class="btn btn-sm" data-act="download">{{ icon('download') }} 下载</button>
+    <button class="btn btn-sm" data-act="move">{{ icon('move') }} 移动</button>
+    <button class="btn btn-sm" data-act="copy">{{ icon('copy') }} 复制</button>
+    <button class="btn btn-sm btn-danger" data-act="delete">{{ icon('trash') }} 删除</button>
     <button class="btn btn-sm" data-act="clear">取消</button>
   </div>
 </div>
 
 <div class="upload-panel glass" id="uploadPanel">
   <div class="upload-head">
-    <span class="upload-title">📤 上传队列</span>
+    <span class="upload-title">{{ icon('upload') }} 上传队列</span>
     <div class="upload-head-right">
       <label class="conc-label" title="并发上传数。数值越大越快，但对服务器压力越大">
         并发
@@ -186,34 +187,35 @@ function postJSON(url, body) {
    文件图标
    ============================================================ */
 const EXT_GROUP = {
-  image: ['png','jpg','jpeg','gif','webp','bmp','svg','ico','avif','heic','tiff'],
-  video: ['mp4','webm','mkv','mov','avi','m4v','flv','wmv','mpeg','mpg'],
-  audio: ['mp3','wav','ogg','flac','m4a','aac','opus','wma','mid'],
-  pdf:   ['pdf'],
-  code:  ['js','mjs','cjs','ts','tsx','jsx','py','java','c','cpp','cc','h','hpp',
-          'cs','go','rs','rb','php','swift','kt','scala','sql','sh','bash','zsh',
-          'json','xml','yml','yaml','toml','ini','env','conf','css','scss','less',
-          'html','htm','vue','svelte','lua','pl','r','dart','gradle','makefile'],
-  zip:   ['zip','rar','7z','tar','gz','bz2','xz','iso'],
-  doc:   ['doc','docx','rtf','odt','txt','md','markdown','tex','log'],
-  sheet: ['xls','xlsx','csv','tsv','ods'],
-  slide: ['ppt','pptx','odp','key'],
-  font:  ['ttf','otf','woff','woff2','eot'],
-};
-
-const ICONS = {
-  dir: '📁', image: '🖼️', video: '🎬', audio: '🎵', pdf: '📕',
-  code: '📜', zip: '🗜️', doc: '📄', sheet: '📊', slide: '📽️',
-  font: '🔤', file: '📄',
+  image:    ['png','jpg','jpeg','gif','webp','bmp','svg','ico','avif','heic','tiff'],
+  video:    ['mp4','webm','mkv','mov','avi','m4v','flv','wmv','mpeg','mpg'],
+  audio:    ['mp3','wav','ogg','flac','m4a','aac','opus','wma','mid'],
+  pdf:      ['pdf'],
+  code:     ['js','mjs','cjs','ts','tsx','jsx','py','java','c','cpp','cc','h','hpp',
+             'cs','go','rs','rb','php','swift','kt','scala','sh','bash','zsh',
+             'json','xml','css','scss','less','html','htm','vue','svelte','lua',
+             'pl','r','dart','gradle','makefile','cmake'],
+  zip:      ['zip','rar','7z','tar','gz','bz2','xz','iso'],
+  doc:      ['doc','docx','rtf','odt','txt','md','markdown','tex','log'],
+  sheet:    ['xls','xlsx','csv','tsv','ods'],
+  slide:    ['ppt','pptx','odp','key'],
+  font:     ['ttf','otf','woff','woff2','eot'],
+  exe:      ['exe','msi','dmg','app','apk','deb','rpm','appimage'],
+  database: ['db','sqlite','sqlite3','sql','mdb','accdb'],
+  config:   ['env','conf','cfg','ini','toml','yaml','yml','properties'],
+  design:   ['psd','ai','fig','sketch','xd','indd'],
+  model3d:  ['obj','stl','fbx','gltf','glb','dae','3ds','blend'],
+  ebook:    ['epub','mobi','azw','azw3','fb2'],
+  torrent:  ['torrent'],
 };
 
 function iconFor(item) {
-  if (item.is_dir) return ICONS.dir;
+  if (item.is_dir) return CD_ICON.folder;
   const ext = (item.ext || '').toLowerCase();
   for (const g in EXT_GROUP) {
-    if (EXT_GROUP[g].includes(ext)) return ICONS[g];
+    if (EXT_GROUP[g].includes(ext)) return CD_ICON[g] || CD_ICON.file;
   }
-  return ICONS.file;
+  return CD_ICON.file;
 }
 
 function isImage(item) { return (item.mime || '').startsWith('image/'); }
@@ -229,7 +231,7 @@ function isText(item) {
 }
 
 /* ============================================================
-   自动滚动器：在容器内居中滚动，每帧最多一次
+   自动滚动器
    ============================================================ */
 function makeScroller(container) {
   let raf = null;
@@ -244,7 +246,6 @@ function makeScroller(container) {
       if (!t || !t.parentNode || !container) return;
       const cRect = container.getBoundingClientRect();
       const eRect = t.getBoundingClientRect();
-      // 已完整可见则不滚动
       if (eRect.top >= cRect.top && eRect.bottom <= cRect.bottom) return;
       const offset = (eRect.top - cRect.top) + container.scrollTop
                    - (container.clientHeight - eRect.height) / 2;
@@ -254,7 +255,7 @@ function makeScroller(container) {
 }
 
 /* ============================================================
-   通用并发池：N 个 worker 从共享游标取任务
+   通用并发池
    ============================================================ */
 async function runPool(tasks, conc) {
   const results = new Array(tasks.length);
@@ -279,6 +280,323 @@ async function runPool(tasks, conc) {
 }
 
 /* ============================================================
+   浏览器内转码（ffmpeg.wasm）
+   ------------------------------------------------------------
+   浏览器不支持的视频格式（AVI / MKV / WMV / FLV …），可以在
+   纯前端用 ffmpeg.wasm 转码成 MP4 或 WebM 后播放。
+   core 约 30MB，仅在用户点击"转码播放"时按需加载。
+   ============================================================ */
+/* ============================================================
+   ffmpeg 资源路径 —— 全部走同源（Flask static）
+   ------------------------------------------------------------
+   Worker 脚本必须与页面同源，否则浏览器会拒绝构造。
+   所以 ffmpeg.js / 814.ffmpeg.js / ffmpeg-core.js / .wasm
+   都放在 static/ffmpeg/ 下，通过 Flask 的 /static/ffmpeg/ 提供。
+   ============================================================ */
+const FFMPEG_BASE = '/static/ffmpeg';
+
+const FFMPEG_URL = {
+  umd:  FFMPEG_BASE + '/ffmpeg.js',        // UMD 主脚本
+  core: FFMPEG_BASE + '/ffmpeg-core.js',   // 编解码器主模块
+  wasm: FFMPEG_BASE + '/ffmpeg-core.wasm', // 编解码器二进制（~30MB）
+  // 814.ffmpeg.js 无需显式指定——UMD 主脚本会根据自身路径自动解析
+};
+
+const TRANSCODE_WARN_SIZE = 300 * 1024 * 1024;
+const TRANSCODE_HARD_MAX  = 800 * 1024 * 1024;
+
+let _ffmpeg        = null;
+let _ffmpegLoading = null;
+
+/* ============================================================
+   XHR 下载（带进度）—— 替代 fetch / toBlobURL
+   ============================================================ */
+function xhrDownload(url, { responseType = 'blob', onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = responseType;
+
+    xhr.onprogress = (e) => {
+      if (!onProgress) return;
+      if (e.lengthComputable) {
+        onProgress({ loaded: e.loaded, total: e.total, pct: e.loaded / e.total });
+      } else {
+        onProgress({ loaded: e.loaded, total: 0, pct: null });
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.response);
+      } else {
+        reject(new Error('HTTP ' + xhr.status));
+      }
+    };
+    xhr.onerror = () => reject(new Error('网络错误'));
+    xhr.onabort = () => reject(new Error('下载已取消'));
+    xhr.send();
+  });
+}
+
+async function downloadAsBlobURL(url, onProgress) {
+  const blob = await xhrDownload(url, { responseType: 'blob', onProgress });
+  return URL.createObjectURL(blob);
+}
+
+async function downloadAsUint8Array(url, onProgress) {
+  const buf = await xhrDownload(url, { responseType: 'arraybuffer', onProgress });
+  return new Uint8Array(buf);
+}
+
+/* ============================================================
+   按需加载脚本（接受 blob: URL）
+   ============================================================ */
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[data-src="${src}"]`)) return resolve();
+    const s = document.createElement('script');
+    s.src = src;
+    s.dataset.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('加载脚本失败：' + src));
+    document.head.appendChild(s);
+  });
+}
+
+/* ============================================================
+   初始化 ffmpeg.wasm —— 全流程 XHR，进度会打进 onProgress
+   回调的参数：{ phase, pct, loaded, total }
+     phase: 'umd' | 'core-js' | 'core-wasm'
+   ============================================================ */
+/* ============================================================
+   初始化 ffmpeg.wasm
+   ------------------------------------------------------------
+   全部资源走同源，Worker 能正常构造。
+   首次加载 core.wasm（~30MB）会走浏览器缓存，第二次极快。
+   ============================================================ */
+async function ensureFFmpeg(onProgress) {
+  if (_ffmpeg) return _ffmpeg;
+  if (_ffmpegLoading) {
+    if (onProgress && _ffmpegLoading._listeners) {
+      _ffmpegLoading._listeners.push(onProgress);
+    }
+    return _ffmpegLoading;
+  }
+
+  const listeners = [];
+  if (onProgress) listeners.push(onProgress);
+  const emit = (info) => {
+    for (const fn of listeners) {
+      try { fn(info); } catch (e) {}
+    }
+  };
+
+  const task = (async () => {
+    // 1) UMD 主脚本（同源，秒级）
+    emit({ phase: 'umd', pct: 0 });
+    await loadScriptOnce(FFMPEG_URL.umd);
+
+    if (!window.FFmpegWASM || !window.FFmpegWASM.FFmpeg) {
+      throw new Error('ffmpeg.wasm 未能初始化（UMD 脚本已加载但未挂载）');
+    }
+
+    // 2) core.js（同源）
+    emit({ phase: 'core-js', pct: 0 });
+    const coreJsURL = await downloadAsBlobURL(FFMPEG_URL.core, (p) =>
+      emit({ phase: 'core-js', ...p }));
+
+    // 3) core.wasm（~30MB，首次下载后会被浏览器缓存）
+    emit({ phase: 'core-wasm', pct: 0 });
+    const coreWasmURL = await downloadAsBlobURL(FFMPEG_URL.wasm, (p) =>
+      emit({ phase: 'core-wasm', ...p }));
+
+    // 4) 创建实例
+    const inst = new window.FFmpegWASM.FFmpeg();
+    inst.on('log', ({ type, message }) => {
+      console.log('[ffmpeg]', type || '', message);
+    });
+
+    await inst.load({
+      coreURL: coreJsURL,
+      wasmURL: coreWasmURL,
+    });
+
+    _ffmpeg = inst;
+    return inst;
+  })();
+
+  task._listeners = listeners;
+  _ffmpegLoading = task;
+
+  try {
+    return await task;
+  } catch (e) {
+    _ffmpegLoading = null;
+    throw e;
+  }
+}
+/* ---------- 在浏览器内转码 ---------- */
+/* ============================================================
+   浏览器内转码
+   ============================================================ */
+/* ============================================================
+   校验：一段视频 blob 浏览器能不能解码
+   ============================================================ */
+function verifyPlayable(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.muted = true;
+
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      v.removeAttribute('src');
+      try { v.load(); } catch (e) {}
+      URL.revokeObjectURL(url);
+      resolve(ok);
+    };
+
+    const timer = setTimeout(() => finish(false), 6000);
+    v.onloadedmetadata = () => finish(v.videoWidth > 0 || v.duration > 0);
+    v.onerror = () => finish(false);
+    v.src = url;
+  });
+}
+
+/* ============================================================
+   浏览器内转码
+   ============================================================ */
+async function transcodeForPlayback(item, onProgress) {
+  // ---- 0) 加载 ffmpeg ----
+  const ff = await ensureFFmpeg((info) => {
+    onProgress && onProgress(info);
+  });
+
+  // ---- 1) 拉取原始文件 ----
+  onProgress && onProgress({ phase: 'fetch', pct: 0, loaded: 0, total: item.size || 0 });
+  const buffer = await downloadAsUint8Array('/api/raw/' + item.id, (p) => {
+    onProgress && onProgress({ phase: 'fetch', ...p });
+  });
+
+  // ---- 2) 写入虚拟文件系统 ----
+  onProgress && onProgress({ phase: 'write', pct: 0 });
+  const extIn  = (item.ext || 'bin').toLowerCase();
+  const inName = 'input.' + extIn;
+  await ff.writeFile(inName, buffer);
+
+  // ---- 3) 依次尝试：copy → 完整重编码 ----
+  //    每次产出都用 verifyPlayable 检查，通不过就试下一个
+    // 强制完整重编码：不再尝试 -c:v copy，
+  // 避免 copy 成功但浏览器解不了（如 AVI 里的 MPEG-4 Part 2 / MJPEG）
+  const attempts = [
+    {
+      label: '完整重编码',
+      out: 'out_enc.mp4',
+      args: [
+        '-y', '-i', inName,
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '128k',
+        '-movflags', '+faststart',
+        'out_enc.mp4',
+      ],
+      mime: 'video/mp4',
+    },
+  ];
+
+  let lastErr = null;
+
+  for (let idx = 0; idx < attempts.length; idx++) {
+    const att = attempts[idx];
+
+    // 清理旧文件
+    try { await ff.deleteFile(att.out); } catch (e) {}
+
+    // 日志尾 + 进度解析
+    const logTail = [];
+    let lastLogAt = Date.now();
+    let lastSecond = -1;
+
+    const onLog = ({ message }) => {
+      if (!message) return;
+      logTail.push(message);
+      if (logTail.length > 20) logTail.shift();
+      lastLogAt = Date.now();
+
+      const m = message.match(/time=(\d+):(\d+):(\d+\.\d+)/);
+      if (m) {
+        const sec = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
+        if (sec !== lastSecond) {
+          lastSecond = sec;
+          onProgress && onProgress({
+            phase: 'encode',
+            elapsed: sec,
+            attempt: idx + 1,
+            label: att.label,
+          });
+        }
+      }
+    };
+    ff.on('log', onLog);
+
+    // 看门狗：120 秒无输出判定卡死
+    let watchdogTimer = null;
+    const watchdog = new Promise((_, reject) => {
+      watchdogTimer = setInterval(() => {
+        if (Date.now() - lastLogAt > 120000) {
+          clearInterval(watchdogTimer);
+          reject(new Error('转码超时：120 秒无输出'));
+        }
+      }, 5000);
+    });
+
+    try {
+      onProgress && onProgress({
+        phase: 'encode',
+        elapsed: 0,
+        attempt: idx + 1,
+        label: att.label,
+      });
+
+      await Promise.race([ff.exec(att.args), watchdog]);
+
+      const out = await ff.readFile(att.out);
+      // 注意：直接把 Uint8Array 交给 Blob，不要用 out.buffer，
+      // 否则可能把整个 ArrayBuffer（含多余字节）塞进去
+      const blob = new Blob([out], { type: att.mime });
+      if (blob.size < 512) throw new Error('输出文件异常，转码可能失败');
+
+      // ---- 关键：验证浏览器能否解码 ----
+      const ok = await verifyPlayable(blob);
+      if (!ok) {
+        throw new Error('生成的视频浏览器无法解码（编码不兼容）');
+      }
+
+      // 成功 → 清理虚拟文件
+      try { await ff.deleteFile(inName); } catch (e) {}
+      try { await ff.deleteFile(att.out); } catch (e) {}
+
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      const tail = logTail.slice(-5).join('\n');
+      lastErr = new Error((e.message || String(e)) + (tail ? '\n\n' + tail : ''));
+      try { await ff.deleteFile(att.out); } catch (e2) {}
+    } finally {
+      if (watchdogTimer) clearInterval(watchdogTimer);
+      if (ff.off) ff.off('log', onLog);
+    }
+  }
+
+  try { await ff.deleteFile(inName); } catch (e) {}
+  throw lastErr || new Error('转码失败');
+}
+
+/* ============================================================
    数据加载
    ============================================================ */
 async function load(folderId) {
@@ -292,7 +610,7 @@ async function load(folderId) {
   }
 
   const area = $('#fileArea');
-  area.innerHTML = '<div class="empty-state"><div class="icon">⏳</div></div>';
+  area.innerHTML = '<div class="empty-state"><div class="icon">' + CD_ICON.loading + '</div></div>';
 
   try {
     const data = await api('/api/list?' + params.toString());
@@ -303,7 +621,7 @@ async function load(folderId) {
     updateBatchBar();
   } catch (e) {
     area.innerHTML = `<div class="empty-state">
-        <div class="icon">⚠️</div><h3>加载失败</h3><p>${esc(e.message)}</p></div>`;
+        <div class="icon">${CD_ICON.warn}</div><h3>加载失败</h3><p>${esc(e.message)}</p></div>`;
   }
 }
 
@@ -374,7 +692,7 @@ function render() {
 function renderBreadcrumb() {
   const bc = $('#breadcrumb');
   if (state.search) {
-    bc.innerHTML = `<span class="crumb current">🔍 搜索「${esc(state.search)}」的结果</span>`;
+    bc.innerHTML = `<span class="crumb current">${CD_ICON.search} 搜索「${esc(state.search)}」的结果</span>`;
     return;
   }
   const parts = [];
@@ -407,7 +725,7 @@ function renderFiles() {
   if (!state.items.length) {
     area.innerHTML = `
       <div class="empty-state">
-        <div class="icon">${state.search ? '🔍' : '📂'}</div>
+        <div class="icon">${state.search ? CD_ICON.search : CD_ICON.folder}</div>
         <h3>${state.search ? '没有找到匹配的文件' : '这里还什么都没有'}</h3>
         <p>${state.search ? '试试其他关键词' : '拖拽文件到页面，或点击右上角上传'}</p>
       </div>`;
@@ -430,15 +748,14 @@ function renderFiles() {
 
 function gridItemHTML(item) {
   const thumb = isImage(item)
-    ? `<img src="/api/raw/${item.id}" alt="" loading="lazy"
-            onerror="this.replaceWith(document.createTextNode('🖼️'))">`
+    ? `<img src="/api/raw/${item.id}" alt="" loading="lazy" data-img>`
     : `<span>${iconFor(item)}</span>`;
 
   const sel = state.selected.has(item.id) ? ' selected' : '';
   return `
     <div class="grid-item${sel}" data-id="${item.id}" data-dir="${item.is_dir ? 1 : 0}">
       <input type="checkbox" class="checkbox grid-check" ${sel ? 'checked' : ''}>
-      <button class="grid-menu" data-menu="${item.id}">⋯</button>
+      <button class="grid-menu" data-menu="${item.id}">${CD_ICON.more}</button>
       <div class="grid-thumb">${thumb}</div>
       <div class="grid-name" title="${esc(item.name)}">${esc(item.name)}</div>
       <div class="grid-meta">${item.is_dir ? '文件夹' : fmtSize(item.size)}</div>
@@ -455,11 +772,21 @@ function listRowHTML(item) {
       <div class="list-name" title="${esc(item.name)}">${esc(item.name)}</div>
       <div class="list-meta">${item.is_dir ? '—' : fmtSize(item.size)}</div>
       <div class="list-meta">${esc(item.updated_at || '')}</div>
-      <button class="list-menu" data-menu="${item.id}">⋯</button>
+      <button class="list-menu" data-menu="${item.id}">${CD_ICON.more}</button>
     </div>`;
 }
 
 function bindItemEvents() {
+  // 图片加载失败的兜底图标
+  $$('.grid-thumb img[data-img]').forEach(img => {
+    img.addEventListener('error', () => {
+      const span = document.createElement('span');
+      span.innerHTML = CD_ICON.image;
+      const node = span.firstChild;
+      if (node) img.replaceWith(node);
+    }, { once: true });
+  });
+
   $$('.grid-item, .list-row').forEach(el => {
     const id = Number(el.dataset.id);
     const isDir = el.dataset.dir === '1';
@@ -524,25 +851,25 @@ function openItemMenu(id, x, y) {
 
   const entries = [];
   if (!item.is_dir) {
-    entries.push({ label: '👁 预览', fn: () => openPreview(item) });
-    entries.push({ label: '⬇ 下载', fn: () => {
+    entries.push({ label: CD_ICON.eye + ' 预览', fn: () => openPreview(item) });
+    entries.push({ label: CD_ICON.download + ' 下载', fn: () => {
       const a = document.createElement('a');
       a.href = '/api/download/' + item.id;
       a.download = item.name;
       document.body.appendChild(a); a.click(); a.remove();
     }});
     if (isText(item)) {
-      entries.push({ label: '✏️ 编辑', fn: () => {
+      entries.push({ label: CD_ICON.edit + ' 编辑', fn: () => {
         window.open('/editor/' + item.id, '_blank');
       }});
     }
   } else {
-    entries.push({ label: '📂 打开', fn: () => enterFolder(item.id) });
+    entries.push({ label: CD_ICON.folder + ' 打开', fn: () => enterFolder(item.id) });
   }
-  entries.push({ label: '✎ 重命名', fn: () => promptRename(item) });
-  entries.push({ label: '↔ 移动到…', fn: () => promptMove([item.id]) });
-  entries.push({ label: '⧉ 复制到…', fn: () => promptCopy([item.id]) });
-  entries.push({ label: '🗑 删除', fn: () => doDelete([item.id]) });
+  entries.push({ label: CD_ICON.rename + ' 重命名', fn: () => promptRename(item) });
+  entries.push({ label: CD_ICON.move + ' 移动到…', fn: () => promptMove([item.id]) });
+  entries.push({ label: CD_ICON.copy + ' 复制到…', fn: () => promptCopy([item.id]) });
+  entries.push({ label: CD_ICON.trash + ' 删除', fn: () => doDelete([item.id]) });
 
   showContextMenu(x, y, entries);
 }
@@ -560,8 +887,8 @@ function showContextMenu(x, y, entries) {
 
   entries.forEach(en => {
     const b = document.createElement('div');
-    b.textContent = en.label;
-    b.style.cssText = 'padding:8px 12px;border-radius:8px;cursor:pointer;';
+    b.innerHTML = en.label;
+    b.style.cssText = 'padding:8px 12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;';
     b.onmouseenter = () => b.style.background = 'var(--surface-hover)';
     b.onmouseleave = () => b.style.background = 'transparent';
     b.onclick = () => { menu.remove(); en.fn(); };
@@ -675,7 +1002,7 @@ async function promptTree(ids, mode) {
       <div class="tree-node">
         <div class="tree-label" data-id="${n.id}">
           ${n.children.length ? '<span class="tree-toggle">▶</span>' : '<span class="tree-toggle"></span>'}
-          <span>📁</span><span>${esc(n.name)}</span>
+          <span>${CD_ICON.folder}</span><span>${esc(n.name)}</span>
         </div>
         <div class="tree-children">${renderNodes(n.children)}</div>
       </div>`).join('');
@@ -686,7 +1013,7 @@ async function promptTree(ids, mode) {
     <div class="tree-box" id="treeBox">
       <div class="tree-node root">
         <div class="tree-label active" data-id="">
-          <span class="tree-toggle"></span><span>🏠</span><span>全部文件（根目录）</span>
+          <span class="tree-toggle"></span><span>${CD_ICON.home}</span><span>全部文件（根目录）</span>
         </div>
       </div>
       ${renderNodes(tree)}
@@ -775,7 +1102,7 @@ $('#batchBar').addEventListener('click', async e => {
 });
 
 /* ============================================================
-   JSZip 批量打包下载（并发 + 每项进度 + 自动滚动）
+   JSZip 批量打包下载
    ============================================================ */
 async function batchDownload(ids) {
   if (!ids.length) return;
@@ -794,14 +1121,13 @@ async function batchDownload(ids) {
 
   if (!files.length) { showToast('没有可下载的文件', 'error'); return; }
 
-  // ---- 下载面板 ----
   const panel = document.createElement('div');
   panel.className = 'upload-panel glass show';
   panel.style.bottom = 'auto';
   panel.style.top = '22px';
   panel.innerHTML = `
     <div class="upload-head">
-      <span class="upload-title">📦 打包下载</span>
+      <span class="upload-title">${CD_ICON.zip} 打包下载</span>
       <div class="upload-head-right">
         <label class="conc-label" title="并发下载数。数值越大越快，对服务器压力也越大">
           并发
@@ -827,7 +1153,6 @@ async function batchDownload(ids) {
   const zipCountEl = panel.querySelector('#zipCount');
   const scrollToZipEl = makeScroller(zipList);
 
-  // ---- 逐项 DOM ----
   const items = files.map((f) => {
     const el = document.createElement('div');
     el.className = 'up-item';
@@ -845,7 +1170,6 @@ async function batchDownload(ids) {
     };
   });
 
-  // ---- 并发选择器（与上传面板共享 cd_concurrency） ----
   const dlConcSelect = panel.querySelector('#downloadConcSelect');
   dlConcSelect.value = String(currentConcurrency);
   dlConcSelect.addEventListener('change', () => {
@@ -858,7 +1182,6 @@ async function batchDownload(ids) {
     }
   });
 
-  // ---- 单个文件下载（XHR + 进度） ----
   function downloadOne(f, item) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -882,16 +1205,12 @@ async function batchDownload(ids) {
     });
   }
 
-  // ---- 状态 ----
   const zip = new JSZip();
   const usedPaths = new Set();
   let doneCount = 0;
 
-  // ---- 构造下载任务列表 ----
   const tasks = files.map((f, i) => async () => {
     const item = items[i];
-
-    // 滚动到当前项
     scrollToZipEl(item.el);
 
     let blob;
@@ -906,7 +1225,6 @@ async function batchDownload(ids) {
       return null;
     }
 
-    // 同名处理（JS 单线程，has/add 之间无 await，原子）
     let path = (f.path || '') + f.name;
     if (usedPaths.has(path)) {
       const dot  = f.name.lastIndexOf('.');
@@ -928,11 +1246,9 @@ async function batchDownload(ids) {
     return { path, blob };
   });
 
-  // ---- 执行 ----
   try {
     const results = await runPool(tasks, currentConcurrency);
 
-    // 按原顺序写入 zip，目录结构稳定
     for (const r of results) {
       if (r && r.blob) zip.file(r.path, r.blob);
     }
@@ -965,26 +1281,69 @@ async function batchDownload(ids) {
 /* ============================================================
    预览
    ============================================================ */
+function canPlay(kind, mime) {
+  if (!mime) return true;
+  try {
+    const el = document.createElement(kind);
+    const r = el.canPlayType(mime);
+    return r === 'probably' || r === 'maybe';
+  } catch (e) { return true; }
+}
+
+function unsupportedBlock(item) {
+  return `<div class="preview-unsupported">
+            <span class="icon">${iconFor(item)}</span>
+            该格式暂不支持在线预览<br>
+            <button class="btn btn-primary" style="margin-top:16px" id="pvDownload">${CD_ICON.download} 下载文件</button>
+          </div>`;
+}
+
+/* 浏览器不能直接播放视频时的面板：转码 or 下载 */
+function videoTranscodeBlock(item) {
+  return `
+    <div class="preview-unsupported" id="txPanel">
+      <span class="icon">${iconFor(item)}</span>
+      <div style="margin-bottom:6px;">浏览器无法直接播放该编码</div>
+      <div style="font-size:12.5px;opacity:.75;margin-bottom:18px;">
+        可在浏览器内转码为 MP4 后播放（首次会下载 ~30MB 解码器）
+      </div>
+      <button class="btn btn-primary" id="txStart">${CD_ICON.video} 转码播放</button>
+      <button class="btn" id="pvDownload" style="margin-left:8px;">${CD_ICON.download} 直接下载</button>
+      <div id="txProgress" style="display:none;width:min(360px,80%);margin-top:22px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);margin-bottom:6px;">
+          <span id="txLabel">准备中…</span><span id="txPct">0%</span>
+        </div>
+        <div class="up-bar" style="height:6px;"><div class="up-fill" id="txFill" style="width:0%"></div></div>
+      </div>
+      <div id="txErr" style="display:none;color:var(--danger);font-size:12.5px;margin-top:14px;"></div>
+    </div>`;
+}
+
 async function openPreview(item) {
-  const url = '/api/raw/' + item.id;
+  const url  = '/api/raw/' + item.id;
+  const mime = item.mime || '';
   let body = '';
 
   if (isImage(item)) {
     body = `<img src="${url}" alt="${esc(item.name)}">`;
   } else if (isVideo(item)) {
-    body = `<video src="${url}" controls autoplay playsinline></video>`;
+    if (canPlay('video', mime)) {
+      body = `<video src="${url}" controls preload="metadata" playsinline data-media></video>`;
+    } else {
+      body = videoTranscodeBlock(item);
+    }
   } else if (isAudio(item)) {
-    body = `<audio src="${url}" controls autoplay></audio>`;
+    if (canPlay('audio', mime)) {
+      body = `<audio src="${url}" controls preload="metadata" data-media></audio>`;
+    } else {
+      body = unsupportedBlock(item);
+    }
   } else if (isPdf(item)) {
     body = `<iframe src="${url}"></iframe>`;
   } else if (isText(item)) {
     body = `<pre class="preview-text" id="pvText">加载中…</pre>`;
   } else {
-    body = `<div class="preview-unsupported">
-              <span class="icon">${iconFor(item)}</span>
-              该格式暂不支持在线预览<br>
-              <button class="btn btn-primary" style="margin-top:16px" id="pvDownload">下载文件</button>
-            </div>`;
+    body = unsupportedBlock(item);
   }
 
   openModal(`
@@ -994,11 +1353,11 @@ async function openPreview(item) {
         ${fmtSize(item.size)}
       </span>
     </h3>
-    <div class="preview-body">${body}</div>
+    <div class="preview-body" id="pvBody">${body}</div>
     <div class="modal-actions">
       <button class="btn" data-close>关闭</button>
-      ${isText(item) ? `<button class="btn" id="pvEdit">✏️ 编辑</button>` : ''}
-      <button class="btn btn-primary" id="pvDownload2">⬇ 下载</button>
+      ${isText(item) ? `<button class="btn" id="pvEdit">${CD_ICON.edit} 编辑</button>` : ''}
+      <button class="btn btn-primary" id="pvDownload2">${CD_ICON.download} 下载</button>
     </div>`, 'modal-lg');
 
   modalBox.querySelector('[data-close]').onclick = closeModal;
@@ -1015,6 +1374,22 @@ async function openPreview(item) {
   const editBtn = $('#pvEdit');
   if (editBtn) editBtn.onclick = () => window.open('/editor/' + item.id, '_blank');
 
+  // canPlayType 有漏判 → 运行时兜底
+  const media = modalBox.querySelector('[data-media]');
+  if (media) {
+    media.addEventListener('error', () => {
+      const pb = modalBox.querySelector('.preview-body');
+      if (!pb) return;
+      pb.innerHTML = videoTranscodeBlock(item);
+      bindTranscode(item, dl);
+    }, { once: true });
+  }
+
+  // 视频走转码分支时，绑定按钮
+  if (modalBox.querySelector('#txStart')) {
+    bindTranscode(item, dl);
+  }
+
   if (isText(item)) {
     try {
       const d = await api('/api/content/' + item.id);
@@ -1027,8 +1402,138 @@ async function openPreview(item) {
   }
 }
 
+/* ---------- 转码按钮逻辑 ---------- */
+/* ---------- 转码按钮逻辑 ---------- */
 /* ============================================================
-   上传（并发 + 自动滚动 + 配额校验）
+   转码按钮逻辑
+   ============================================================ */
+function bindTranscode(item, downloadFn) {
+  const startBtn = modalBox.querySelector('#txStart');
+  const dlBtn    = modalBox.querySelector('#pvDownload');
+  if (dlBtn) dlBtn.onclick = downloadFn;
+
+  if (!startBtn) return;
+
+  startBtn.onclick = async () => {
+    // 大文件提示
+    if (item.size > TRANSCODE_HARD_MAX) {
+      if (!confirm(
+        '文件过大（' + fmtSize(item.size) + '）\n\n' +
+        '浏览器内转码需要把整个文件读进内存，超过 ' +
+        fmtSize(TRANSCODE_HARD_MAX) + ' 时几乎一定失败。\n\n' +
+        '建议直接下载到本地用播放器打开。是否仍要尝试？'
+      )) return;
+    } else if (item.size > TRANSCODE_WARN_SIZE) {
+      if (!confirm(
+        '文件较大（' + fmtSize(item.size) + '）\n\n' +
+        '浏览器内转码完全在本地进行，转码速度约为播放时长的 1~3 倍，' +
+        '同时会占用较多内存和 CPU。\n\n' +
+        '确定要继续吗？'
+      )) return;
+    }
+
+    const progressBox = modalBox.querySelector('#txProgress');
+    const labelEl     = modalBox.querySelector('#txLabel');
+    const pctEl       = modalBox.querySelector('#txPct');
+    const fillEl      = modalBox.querySelector('#txFill');
+    const errEl       = modalBox.querySelector('#txErr');
+
+    startBtn.disabled = true;
+    if (progressBox) progressBox.style.display = 'block';
+    if (errEl) errEl.style.display = 'none';
+
+    // 统一样式：编码阶段的"渐近条" 与 真实进度条 都走这一个函数
+    const setBar = (ratio) => {
+      if (fillEl) fillEl.style.width = Math.max(0, Math.min(100, ratio * 100)).toFixed(1) + '%';
+    };
+
+    try {
+      const blobUrl = await transcodeForPlayback(item, (info) => {
+        const { phase, pct, loaded, total, elapsed, attempt } = info || {};
+
+        // ---------- 文字 ----------
+        if (labelEl) {
+          switch (phase) {
+            case 'umd':
+              labelEl.textContent = '加载解码器（主脚本）…';
+              break;
+            case 'core-js':
+              labelEl.textContent = '下载解码器（core.js）…';
+              break;
+            case 'core-wasm':
+              labelEl.textContent = '首次下载解码器 ~30MB（之后浏览器会缓存）…';
+              break;
+            case 'fetch':
+              labelEl.textContent = '读取源文件…';
+              break;
+            case 'write':
+              labelEl.textContent = '写入虚拟文件系统…';
+              break;
+            case 'encode':
+              case 'encode':
+                if (attempt === 1) {
+                  labelEl.textContent = '转码中（第 1 步：直接封装）…';
+                } else {
+                  labelEl.textContent = '转码中（第 2 步：完整重编码，较慢）…';
+                }
+                break;
+            default:
+              labelEl.textContent = '处理中…';
+          }
+        }
+
+        // ---------- 右侧数字 ----------
+        if (pctEl) {
+          if (typeof elapsed === 'number' && phase === 'encode') {
+            // 编码阶段：显示已转码的秒数
+            const m = Math.floor(elapsed / 60);
+            const s = (elapsed % 60).toFixed(0);
+            pctEl.textContent = m > 0 ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`;
+          } else if (typeof pct === 'number') {
+            // 有字节进度：xx% · 已下/总量
+            const pctStr = Math.round(pct * 100) + '%';
+            if (total) {
+              pctEl.textContent = `${pctStr} · ${fmtSize(loaded)} / ${fmtSize(total)}`;
+            } else {
+              pctEl.textContent = pctStr;
+            }
+          } else {
+            pctEl.textContent = '';
+          }
+        }
+
+        // ---------- 进度条 ----------
+        if (typeof pct === 'number') {
+          setBar(pct);
+        } else if (phase === 'encode') {
+          // 编码阶段没有总时长，用渐近曲线，最长到 95%
+          const t = typeof elapsed === 'number' ? elapsed : 0;
+          const ratio = t > 0 ? (1 - 1 / (1 + t / 6)) * 0.95 : 0.05;
+          setBar(ratio);
+        }
+      });
+
+      const pb = modalBox.querySelector('.preview-body');
+      if (pb) {
+        pb.innerHTML = `<video src="${blobUrl}" controls autoplay playsinline></video>`;
+        const v = pb.querySelector('video');
+        if (v) v.addEventListener('loadeddata', () => {
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        }, { once: true });
+      }
+    } catch (e) {
+      if (progressBox) progressBox.style.display = 'none';
+      if (errEl) {
+        errEl.style.display = 'block';
+        errEl.textContent = '转码失败：' + (e.message || e);
+      }
+      startBtn.disabled = false;
+    }
+  };
+}
+
+/* ============================================================
+   上传
    ============================================================ */
 const uploadQueue = [];
 let uploading = false;
@@ -1195,31 +1700,26 @@ async function startUploading() {
   uploading = true;
 
   while (true) {
-    // 实时读取并发设置，允许上传过程中调整
     const conc = Math.max(1, Math.min(50, currentConcurrency));
     const batch = uploadQueue
       .filter(t => t.status === 'pending')
       .slice(0, conc);
     if (!batch.length) break;
 
-    // 标记为 uploading
     batch.forEach(t => {
       t.status = 'uploading';
       t.progress = 0;
       updateItemUI(t);
     });
 
-    // 滚动到本批第一项
     const firstIdx = uploadQueue.indexOf(batch[0]);
     const firstEl = listEl.querySelector(`[data-idx="${firstIdx}"]`);
     if (firstEl) scrollToUploadEl(firstEl);
 
-    // 并发上传
     await Promise.all(batch.map(t => uploadOne(t)));
 
     loadStats();
 
-    // 配额错误则终止
     const quotaStopped = uploadQueue.some(t =>
       t.status === 'error' && (t.code === 'QUOTA_EXCEEDED' || t.code === 'NO_QUOTA'));
     if (quotaStopped) {
@@ -1293,7 +1793,6 @@ $('#folderInput').addEventListener('change', function () {
   this.value = '';
 });
 
-// 并发选择器（上传面板）
 const concSelect = $('#concurrencySelect');
 if (concSelect) {
   concSelect.value = String(currentConcurrency);
@@ -1447,7 +1946,7 @@ $$('.nav-item').forEach(el => {
 
 // 视图切换
 function applyView() {
-  $('#viewBtn').textContent = state.view === 'grid' ? '▦' : '☰';
+  $('#viewBtn').innerHTML = state.view === 'grid' ? CD_ICON.grid : CD_ICON.list;
 }
 $('#viewBtn').addEventListener('click', () => {
   state.view = state.view === 'grid' ? 'list' : 'grid';

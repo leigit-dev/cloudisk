@@ -80,6 +80,29 @@ a:hover { text-decoration: underline; }
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
+/* ============================================================
+   SVG 图标
+   ============================================================ */
+.cd-icon {
+  display: inline-block;
+  vertical-align: -0.125em;
+  flex-shrink: 0;
+}
+
+/* 加载动画：三圆点脉冲 */
+@keyframes cd-pl-pulse {
+  0%, 100% { opacity: .22; transform: scale(.68); }
+  50%      { opacity: 1;   transform: scale(1);   }
+}
+.cd-pl {
+  animation: cd-pl-pulse 1.35s ease-in-out infinite;
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+}
+.cd-p1 { animation-delay: 0s;    }
+.cd-p2 { animation-delay: .18s;  }
+.cd-p3 { animation-delay: .36s;  }
+
 /* ---------- 玻璃卡片 ---------- */
 .glass {
   background: var(--surface);
@@ -147,6 +170,7 @@ a:hover { text-decoration: underline; }
   transition: background .16s, transform .12s;
 }
 .icon-btn:hover { background: var(--surface-hover); transform: translateY(-1px); }
+.icon-btn .cd-icon { width: 18px; height: 18px; }
 
 /* ---------- 表单 ---------- */
 .field { margin-bottom: 14px; }
@@ -192,7 +216,14 @@ a:hover { text-decoration: underline; }
   padding: 40px 36px 32px;
   text-align: center;
 }
-.auth-logo { font-size: 46px; line-height: 1; margin-bottom: 8px; }
+.auth-logo {
+  font-size: 46px;
+  line-height: 1;
+  margin-bottom: 8px;
+  color: var(--text);
+  display: inline-block;
+}
+.auth-logo .cd-icon { width: 1em; height: 1em; }
 .auth-title { margin: 0 0 4px; font-size: 24px; letter-spacing: .5px; }
 .auth-sub { margin: 0 0 26px; color: var(--text-dim); font-size: 13.5px; }
 .auth-form { text-align: left; }
@@ -239,6 +270,7 @@ a:hover { text-decoration: underline; }
   font-size: 19px;
   box-shadow: 0 6px 16px rgba(79,124,255,.32);
 }
+.brand-logo .cd-icon { width: 20px; height: 20px; }
 .brand-name { font-size: 17px; font-weight: 700; letter-spacing: .3px; }
 
 .search-box {
@@ -267,11 +299,19 @@ a:hover { text-decoration: underline; }
   font-size: 13.5px;
   font-family: inherit;
 }
-.search-icon { opacity: .5; font-size: 13px; }
+.search-icon {
+  opacity: .55;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+}
+.search-icon .cd-icon { width: 15px; height: 15px; }
 .search-clear {
   border: none; background: transparent; cursor: pointer;
   color: var(--text-faint); font-size: 16px; line-height: 1;
+  display: inline-flex; align-items: center; padding: 0;
 }
+.search-clear .cd-icon { width: 14px; height: 14px; }
 .search-clear:hover { color: var(--text); }
 
 .topbar-actions {
@@ -285,18 +325,10 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 5px 12px 5px 5px;
+  padding: 5px 12px 5px 12px;
   border-radius: 999px;
   background: var(--surface);
   border: 1px solid var(--border-soft);
-}
-.avatar {
-  width: 28px; height: 28px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: #fff;
-  display: grid; place-items: center;
-  font-size: 13px; font-weight: 700;
 }
 .uname { font-size: 13px; max-width: 100px; overflow: hidden;
          text-overflow: ellipsis; white-space: nowrap; }
@@ -338,7 +370,15 @@ a:hover { text-decoration: underline; }
   color: var(--primary);
   font-weight: 600;
 }
-.nav-item .emoji { font-size: 15px; width: 18px; text-align: center; }
+.nav-item .emoji {
+  font-size: 15px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-item .emoji .cd-icon { width: 18px; height: 18px; }
 
 .storage-box {
   margin-top: auto;
@@ -389,6 +429,7 @@ a:hover { text-decoration: underline; }
   flex: 1;
   min-width: 0;
 }
+.breadcrumb .cd-icon { width: 14px; height: 14px; vertical-align: -2px; margin-right: 2px; }
 .crumb {
   padding: 3px 9px;
   border-radius: 7px;
@@ -403,6 +444,7 @@ a:hover { text-decoration: underline; }
 .crumb-sep { color: var(--text-faint); font-size: 11px; }
 
 .toolbar-right { display: flex; align-items: center; gap: 8px; }
+.toolbar-right .btn .cd-icon { width: 15px; height: 15px; }
 
 .file-area {
   flex: 1;
@@ -448,7 +490,9 @@ a:hover { text-decoration: underline; }
   height: 54px;
   display: grid;
   place-items: center;
+  color: var(--text);
 }
+.grid-thumb .cd-icon { width: 40px; height: 40px; }
 .grid-thumb img {
   max-width: 100%;
   max-height: 54px;
@@ -488,7 +532,9 @@ a:hover { text-decoration: underline; }
   opacity: 0;
   transition: opacity .15s, background .15s;
   display: grid; place-items: center;
+  padding: 0;
 }
+.grid-menu .cd-icon { width: 16px; height: 16px; }
 .grid-item:hover .grid-menu { opacity: 1; }
 .grid-menu:hover { background: var(--surface-hover); color: var(--text); }
 
@@ -521,7 +567,15 @@ a:hover { text-decoration: underline; }
 .list-row:hover { background: var(--surface-hover); transform: translateX(2px); }
 .list-row.selected { border-color: var(--primary); background: var(--primary-soft); }
 
-.list-icon { font-size: 20px; text-align: center; }
+.list-icon {
+  font-size: 20px;
+  text-align: center;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.list-icon .cd-icon { width: 20px; height: 20px; }
 .list-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -538,7 +592,9 @@ a:hover { text-decoration: underline; }
   font-size: 16px; cursor: pointer;
   display: grid; place-items: center;
   transition: background .15s;
+  padding: 0;
 }
+.list-menu .cd-icon { width: 16px; height: 16px; }
 .list-menu:hover { background: var(--surface-hover); color: var(--text); }
 
 .checkbox {
@@ -557,7 +613,16 @@ a:hover { text-decoration: underline; }
   color: var(--text-faint);
   text-align: center;
 }
-.empty-state .icon { font-size: 58px; opacity: .45; margin-bottom: 14px; }
+.empty-state .icon {
+  font-size: 58px;
+  opacity: .45;
+  margin-bottom: 14px;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.empty-state .icon .cd-icon { width: 58px; height: 58px; }
 .empty-state h3 { margin: 0 0 6px; font-size: 16px; font-weight: 500; color: var(--text-dim); }
 .empty-state p { margin: 0; font-size: 13px; }
 
@@ -587,6 +652,7 @@ a:hover { text-decoration: underline; }
 .batch-count { font-size: 13px; color: var(--text-dim); white-space: nowrap; }
 .batch-count b { color: var(--primary); font-size: 15px; }
 .batch-actions { display: flex; gap: 7px; }
+.batch-actions .btn .cd-icon { width: 14px; height: 14px; }
 
 /* ============================================================
    上传面板
@@ -615,7 +681,14 @@ a:hover { text-decoration: underline; }
   justify-content: space-between;
   margin-bottom: 12px;
 }
-.upload-title { font-size: 14px; font-weight: 600; }
+.upload-title {
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.upload-title .cd-icon { width: 16px; height: 16px; color: var(--text-dim); }
 .upload-summary { font-size: 12px; color: var(--text-dim); }
 .upload-list {
   display: flex;
@@ -697,6 +770,7 @@ a:hover { text-decoration: underline; }
   gap: 9px;
   margin-top: 22px;
 }
+.modal-actions .btn .cd-icon { width: 14px; height: 14px; }
 
 /* 预览 */
 .preview-body {
@@ -744,7 +818,13 @@ a:hover { text-decoration: underline; }
   text-align: center;
   color: var(--text-faint);
 }
-.preview-unsupported .icon { font-size: 46px; display: block; margin-bottom: 12px; }
+.preview-unsupported .icon {
+  font-size: 46px;
+  display: inline-flex;
+  margin-bottom: 12px;
+  color: var(--text-dim);
+}
+.preview-unsupported .icon .cd-icon { width: 46px; height: 46px; }
 
 /* 文件树选择器 */
 .tree-box {
@@ -767,8 +847,10 @@ a:hover { text-decoration: underline; }
   font-size: 13.5px;
   transition: background .15s;
 }
+.tree-label .cd-icon { width: 15px; height: 15px; color: var(--text-dim); }
 .tree-label:hover { background: var(--surface-hover); }
 .tree-label.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.tree-label.active .cd-icon { color: var(--primary); }
 .tree-children { display: none; }
 .tree-node.open > .tree-children { display: block; }
 .tree-toggle {
@@ -832,6 +914,11 @@ a:hover { text-decoration: underline; }
   gap: 9px;
   min-width: 0;
 }
+.editor-file > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+}
 .editor-file .name {
   font-size: 15px;
   font-weight: 600;
@@ -841,6 +928,7 @@ a:hover { text-decoration: underline; }
 }
 .editor-file .meta { font-size: 12px; color: var(--text-faint); }
 .editor-actions { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.editor-actions .btn .cd-icon { width: 14px; height: 14px; }
 .editor-shell {
   flex: 1;
   min-height: 0;
@@ -886,116 +974,6 @@ a:hover { text-decoration: underline; }
   .batch-actions .btn { padding: 5px 9px; font-size: 12px; }
 }
 
-/* ============================================================
-   图标灰化 —— 让所有 UI 图标统一为灰色
-   ------------------------------------------------------------
-   想调节灰度强弱，改 --icon-gray 和 --icon-alpha 即可：
-     --icon-gray: 0    → 保留 emoji 原色
-     --icon-gray: 1    → 完全灰
-     --icon-gray: .5   → 半灰
-   ============================================================ */
-:root {
-  --icon-gray:  1;
-  --icon-alpha: .78;
-}
-
-/* ---------- 侧栏导航图标 ---------- */
-.nav-item .emoji {
-  filter: grayscale(var(--icon-gray));
-  opacity: var(--icon-alpha);
-}
-
-/* ---------- 网格视图：文件图标（emoji 部分，不含图片缩略图） ---------- */
-.grid-thumb > span {
-  filter: grayscale(var(--icon-gray));
-  opacity: var(--icon-alpha);
-  display: inline-block;   /* filter 对内联元素需要触发 BFC */
-}
-
-/* ---------- 列表视图：文件图标 ---------- */
-.list-icon {
-  filter: grayscale(var(--icon-gray));
-  opacity: var(--icon-alpha);
-  display: inline-block;
-}
-
-/* ---------- 空状态大图标 ---------- */
-.empty-state .icon {
-  filter: grayscale(var(--icon-gray));
-  opacity: .42;
-}
-
-/* ---------- 预览不支持时的占位图标 ---------- */
-.preview-unsupported .icon {
-  filter: grayscale(var(--icon-gray));
-  opacity: .55;
-}
-
-/* ---------- 文件夹树（移动/复制弹窗）里的图标 ---------- */
-.tree-label > span:nth-child(2) {
-  filter: grayscale(var(--icon-gray));
-  opacity: .82;
-  display: inline-block;
-}
-
-/* ---------- 登录页云 logo ---------- */
-.auth-logo {
-  filter: grayscale(var(--icon-gray));
-  opacity: .72;
-  display: inline-block;
-}
-
-/* ---------- 上传面板标题里的 📤 ---------- */
-.upload-title {
-  filter: grayscale(var(--icon-gray));
-}
-
-/* ---------- 网格 / 列表的更多按钮（⋯），本身已经偏灰，这里只是统一一下 ---------- */
-.grid-menu,
-.list-menu {
-  filter: grayscale(var(--icon-gray));
-  opacity: .7;
-}
-.grid-menu:hover,
-.list-menu:hover {
-  opacity: 1;
-}
-/* ============================================================
-   上传面板右侧：并发选择器
-   ============================================================ */
-.upload-head-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.conc-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
-  color: var(--text-dim);
-  user-select: none;
-}
-.conc-select {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 2px 6px;
-  font-size: 11.5px;
-  outline: none;
-  cursor: pointer;
-  font-family: inherit;
-}
-.conc-select:hover { background: var(--surface-hover); }
-.conc-select:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary-soft);
-}
-.conc-select option {
-  background: var(--surface-solid);
-  color: var(--text);
-}
 /* ============================================================
    上传 / 下载面板右侧：并发选择器
    ============================================================ */

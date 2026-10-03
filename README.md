@@ -1,4 +1,3 @@
-
 # ClouDisk
 
 一个为局域网个人文件存储与组织内共享设计的轻量级网盘应用。
@@ -10,10 +9,12 @@
 - **多用户隔离**：每个用户拥有独立的文件空间，互不可见。
 - **文件与文件夹管理**：上传、下载、重命名、移动、复制、删除，支持拖拽上传整个文件夹并保留目录结构。
 - **在线预览**：图片、视频、音频、PDF 直接在浏览器中查看。
+- **浏览器内视频转码**：浏览器无法直接播放的视频（AVI / MKV / WMV / FLV 等），可在纯前端用 ffmpeg.wasm 转码为 MP4 后播放，不上传服务器。
 - **在线编辑**：基于 Ace 编辑器的文本/代码编辑，支持语法高亮与 JSON 格式化。
 - **批量打包下载**：服务端收集文件清单，前端 JSZip 并发拉取并打包为 zip。
 - **配额管理**：按用户分配存储空间，超出配额时自动拒绝上传与复制。
 - **主题切换**：浅色 / 深色主题，跟随系统偏好。
+- **SVG 图标**：所有图标统一由 Jinja 宏（`templates/icon_svg.html`）渲染，含加载动画与未知类型兜底。
 - **Cloudflare Access 集成**（可选）：通过 JWT 自动登录，未配置时自动回退传统注册/登录。
 
 ---
@@ -35,6 +36,20 @@ waitress-serve --listen=0.0.0.0:5000 main:app
 ```
 
 传输重要文件时建议通过 Nginx 反向代理并启用 HTTPS。
+
+### 单文件上限
+
+单文件上限默认 2GB，可通过环境变量调整：
+
+```bash
+# 本地 / 直连部署（默认 2GB）
+python main.py
+
+# 走 Cloudflare Tunnel 免费版（100MB 请求体限制）
+CLOUDDISK_MAX_FILE=99614720 python main.py
+```
+
+`MAX_CONTENT_LENGTH` 会随 `CLOUDDISK_MAX_FILE` 自动同步，无需单独配置。
 
 ---
 
@@ -127,6 +142,39 @@ python main.py
 
 ---
 
+## 浏览器内转码
+
+浏览器无法直接播放的视频（AVI / MKV / WMV / FLV 等），可在预览弹窗中点击「转码播放」，由前端 ffmpeg.wasm 转码为 H.264 MP4 后播放。整个过程在本地完成，原文件不上传服务器。
+
+### 部署 ffmpeg 资源
+
+ffmpeg.wasm 的 Worker 脚本必须与页面同源，因此相关文件需放在 `static/ffmpeg/` 下，随 Flask 一同提供：
+
+```bash
+mkdir -p static/ffmpeg
+
+curl -L -o static/ffmpeg/ffmpeg.js \
+  https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js
+
+curl -L -o static/ffmpeg/814.ffmpeg.js \
+  https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/umd/814.ffmpeg.js
+
+curl -L -o static/ffmpeg/ffmpeg-core.js \
+  https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js
+
+curl -L -o static/ffmpeg/ffmpeg-core.wasm \
+  https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm
+```
+
+### 说明
+
+- 首次点击「转码播放」时下载约 30MB 解码器，之后浏览器会缓存。
+- 转码强制使用 `libx264` 完整重编码（`-preset ultrafast`），不尝试 `-c:v copy`，保证输出一定可播放。
+- 大文件会先弹确认框：超过 300MB 提示、超过 800MB 明确警告。
+- 转码结果会在播放前用 `verifyPlayable()` 校验；浏览器无法解码时自动报错，不会出现"控件出现但画面不动"。
+
+---
+
 ## 第三方依赖
 
 ### 服务端
@@ -145,14 +193,24 @@ python main.py
 | PyJWT | MIT | https://github.com/jpadilla/pyjwt |
 | cryptography | Apache-2.0 / BSD-3-Clause | https://github.com/pyca/cryptography |
 
+可选（生产级 WSGI 服务器）：
+
+| 依赖 | 许可证 | 来源 |
+|---|---|---|
+| Waitress | ZPL-2.1 | https://github.com/Pylons/waitress |
+
 ### 前端
 
-通过 jsDelivr CDN 引入，未随本项目源码分发：
+Ace 与 JSZip 通过 jsDelivr CDN 引入；ffmpeg.wasm 需自行下载到 `static/ffmpeg/`（见上文）：
 
 | 依赖 | 许可证 | 来源 |
 |---|---|---|
 | Ace 1.32.6 | BSD-3-Clause | https://github.com/ajaxorg/ace |
 | JSZip 3.10.1 | MIT | https://github.com/Stuk/jszip |
+| @ffmpeg/ffmpeg 0.12.10 | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
+| @ffmpeg/core 0.12.6 | LGPL-2.1-or-later（部分构建为 GPL） | https://github.com/ffmpegwasm/ffmpeg.wasm |
+
+**注**：`@ffmpeg/core` 是 FFmpeg 的 WebAssembly 构建，其许可证取决于具体的构建配置。默认 npm 发行版包含 `libx264` 等组件，实际遵循 GPL。若要商用并规避 GPL 义务，请自行构建不含 GPL 组件的 core。
 
 局域网部署若无法访问 jsDelivr CDN，可将 Ace 和 JSZip 下载到 `static/` 目录下，并修改模板中的 `<script>` 路径。下载时请保留源文件顶部的许可证声明。
 
@@ -171,15 +229,17 @@ data/
 
 **建议定期备份整个 `data/` 目录。** 备份时注意排除或加密 `secret.key`。
 
-目前设置单文件上限 95MB，可根据需要加大或者改用分片上传。
+ffmpeg.wasm 相关文件位于 `static/ffmpeg/`，属于部署产物，无需备份。
+
 ---
 
 ## 已知限制
 
-
 - 未实现 CSRF token，请勿将本应用暴露在不受信任的公网环境中。
 - 未实现文件版本历史，删除操作不可恢复。
 - 用户密码最小长度 8 位，未强制复杂度要求。
+- 浏览器内转码为单线程 wasm，速度约为 0.3~1× 实时；文件超过 800MB 时失败概率高，建议直接下载。
+- 单文件上限默认 2GB；走 Cloudflare Tunnel 免费版时请将 `CLOUDDISK_MAX_FILE` 设为 95MB 以内，或改用分片上传。
 
 ---
 
