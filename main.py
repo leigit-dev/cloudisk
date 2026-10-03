@@ -1261,6 +1261,14 @@ def api_tree():
     return jsonify(success=True, tree=build(None))
 
 
+@app.after_request
+def add_cache_headers(response):
+    # 判断请求路径是否以 /static/ 开头
+    if request.path.startswith('/static/ffmpeg'):
+        # 设置强缓存：公共缓存，有效期为1年
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+    return response
+    
 # ==========================================================================
 if __name__ == '__main__':
     load_db()
